@@ -1,0 +1,7 @@
+/target/
+/dist/
+/.worktrees/
+*.log
+report.json
+capture-plan.json
+
