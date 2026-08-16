@@ -1,0 +1,64 @@
+{
+  "schema": "neuestar.report/v1",
+  "artifact": {
+    "outer_archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "payload_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+    "probe_version": "0.1.0"
+  },
+  "matrix_cell": {
+    "distro": "nixos",
+    "gpu_vendor": "nvidia",
+    "display_server": "wayland"
+  },
+  "observed_host": {
+    "distro_id": "nixos 25.05",
+    "kernel_release": "6.12.0",
+    "architecture": "x86_64",
+    "gpu_description": "NVIDIA GeForce RTX 3080",
+    "driver_version": "580.82.09"
+  },
+  "containment": {
+    "namespace_constructed": true
+  },
+  "runtime": {
+    "libc_source": "controlled",
+    "interpreter": "/neuestar/ld-linux-x86-64.so.2"
+  },
+  "graphics": {
+    "renderer": "hardware",
+    "renderer_description": "NVIDIA Vulkan driver",
+    "device": "NVIDIA GeForce RTX 3080",
+    "vendor_specific_rules": [
+      {
+        "category": "nvidia-device-nodes",
+        "description": "Expose already-existing NVIDIA device nodes"
+      }
+    ]
+  },
+  "presentation": {
+    "frames_requested": 300,
+    "frames_presented": 300,
+    "validation_errors": 0,
+    "device_loss": false,
+    "timings": {
+      "elapsed_seconds": 8.42,
+      "frame_time_median_ms": 24.9,
+      "frame_time_p95_ms": 31.2,
+      "frame_time_p99_ms": 34.8,
+      "frame_time_max_ms": 41.7
+    }
+  },
+  "capture": {
+    "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "gates": {
+    "l0_0_containment": "pass",
+    "l0_1_launch": "pass",
+    "l0_2_acceleration": "pass",
+    "l0_3_present": "pass",
+    "l0_4_churn": "not-run",
+    "l0_5_maintenance": "not-run"
+  },
+  "classification": "clean-pass"
+}

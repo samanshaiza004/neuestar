@@ -1,0 +1,65 @@
+{
+  "schema": "neuestar.report/v1",
+  "artifact": {
+    "outer_archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "payload_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+    "probe_version": "0.1.0"
+  },
+  "matrix_cell": {
+    "distro": "ubuntu-lts",
+    "gpu_vendor": "amd",
+    "display_server": "x11"
+  },
+  "observed_host": {
+    "distro_id": "ubuntu 24.04.2 LTS",
+    "kernel_release": "6.8.0-58-generic",
+    "architecture": "x86_64",
+    "gpu_description": "AMD Radeon RX 7900 XT",
+    "driver_version": "25.0"
+  },
+  "containment": {
+    "namespace_constructed": true
+  },
+  "runtime": {
+    "libc_source": "host-glibc",
+    "host_glibc_path": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+    "interpreter": "/lib64/ld-linux-x86-64.so.2",
+    "loader_diagnostics": [
+      "host glibc assimilated through generic DT_NEEDED traversal"
+    ]
+  },
+  "graphics": {
+    "renderer": "hardware",
+    "renderer_description": "AMD RADV driver",
+    "device": "AMD Radeon RX 7900 XT"
+  },
+  "presentation": {
+    "frames_requested": 300,
+    "frames_presented": 300,
+    "validation_errors": 0,
+    "device_loss": false,
+    "timings": {
+      "elapsed_seconds": 7.94,
+      "frame_time_median_ms": 22.1,
+      "frame_time_p95_ms": 28.6,
+      "frame_time_p99_ms": 31.4,
+      "frame_time_max_ms": 38.9
+    }
+  },
+  "capture": {
+    "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "captured_concrete_files": [
+      "/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so"
+    ]
+  },
+  "gates": {
+    "l0_0_containment": "pass",
+    "l0_1_launch": "pass",
+    "l0_2_acceleration": "pass",
+    "l0_3_present": "pass",
+    "l0_4_churn": "not-run",
+    "l0_5_maintenance": "not-run"
+  },
+  "classification": "conditional-pass"
+}

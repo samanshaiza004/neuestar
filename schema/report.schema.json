@@ -1,0 +1,479 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neuestar:report:v1",
+  "title": "Neuestar Gate L0 report",
+  "description": "Versioned machine-readable Gate L0 evidence model. Cross-field invariants such as host-glibc classification, software renderers, exact L0.3 frames, and forbidden preparation are enforced by the Rust validator.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "artifact",
+    "matrix_cell",
+    "observed_host",
+    "containment",
+    "runtime",
+    "graphics",
+    "presentation",
+    "capture",
+    "gates",
+    "classification"
+  ],
+  "properties": {
+    "schema": {
+      "const": "neuestar.report/v1"
+    },
+    "artifact": {
+      "$ref": "#/$defs/artifact"
+    },
+    "matrix_cell": {
+      "$ref": "#/$defs/matrixCell"
+    },
+    "observed_host": {
+      "$ref": "#/$defs/observedHost"
+    },
+    "containment": {
+      "$ref": "#/$defs/containmentEvidence"
+    },
+    "runtime": {
+      "$ref": "#/$defs/runtimeEvidence"
+    },
+    "graphics": {
+      "$ref": "#/$defs/graphicsEvidence"
+    },
+    "presentation": {
+      "$ref": "#/$defs/presentationEvidence"
+    },
+    "capture": {
+      "$ref": "#/$defs/captureEvidence"
+    },
+    "gates": {
+      "$ref": "#/$defs/gateResults"
+    },
+    "classification": {
+      "type": "string",
+      "enum": ["clean-pass", "conditional-pass", "fail"]
+    },
+    "failure": {
+      "$ref": "#/$defs/structuredFailure"
+    }
+  },
+  "$defs": {
+    "sha256Hex": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outer_archive_sha256",
+        "payload_manifest_sha256",
+        "source_commit",
+        "probe_version"
+      ],
+      "properties": {
+        "outer_archive_sha256": {
+          "$ref": "#/$defs/sha256Hex"
+        },
+        "payload_manifest_sha256": {
+          "$ref": "#/$defs/sha256Hex"
+        },
+        "source_commit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "probe_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    },
+    "matrixCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["distro", "gpu_vendor", "display_server"],
+      "properties": {
+        "distro": {
+          "type": "string",
+          "enum": ["fedora", "ubuntu-lts", "arch", "nixos"]
+        },
+        "gpu_vendor": {
+          "type": "string",
+          "enum": ["intel", "amd", "nvidia"]
+        },
+        "display_server": {
+          "type": "string",
+          "enum": ["wayland", "x11"]
+        }
+      }
+    },
+    "observedHost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distro_id",
+        "kernel_release",
+        "architecture",
+        "gpu_description"
+      ],
+      "properties": {
+        "distro_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kernel_release": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "gpu_description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "driver_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "display_server": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    },
+    "containmentEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace_constructed"],
+      "properties": {
+        "namespace_constructed": {
+          "type": "boolean"
+        },
+        "forbidden_preparation": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/forbiddenPreparation"
+          }
+        }
+      }
+    },
+    "forbiddenPreparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "sudo",
+            "sysctl-or-apparmor",
+            "setuid-install",
+            "distro-compatibility-packages",
+            "nix-ld",
+            "manual-bubblewrap",
+            "driver-symlinks",
+            "host-elf-patching",
+            "neuestar-driver-preparation"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "runtimeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["libc_source"],
+      "properties": {
+        "libc_source": {
+          "type": "string",
+          "enum": ["controlled", "host-glibc", "not-determined"]
+        },
+        "host_glibc_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "interpreter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "unresolved_symbols": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "loader_diagnostics": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      }
+    },
+    "graphicsEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["renderer", "renderer_description", "device"],
+      "properties": {
+        "renderer": {
+          "type": "string",
+          "enum": ["software", "hardware", "not-determined"]
+        },
+        "renderer_description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "device": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "icd_manifests": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "discovered_libraries": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "vendor_specific_rules": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/vendorSpecificRule"
+          }
+        },
+        "distro_specific_rules": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "$ref": "#/$defs/distroSpecificRule"
+          }
+        }
+      }
+    },
+    "vendorSpecificRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "description"],
+      "properties": {
+        "category": {
+          "const": "nvidia-device-nodes"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "distroSpecificRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "description"],
+      "properties": {
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "presentationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frames_requested",
+        "frames_presented",
+        "validation_errors",
+        "device_loss"
+      ],
+      "properties": {
+        "frames_requested": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "frames_presented": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "validation_errors": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "device_loss": {
+          "type": "boolean"
+        },
+        "timings": {
+          "$ref": "#/$defs/presentationTimings"
+        }
+      }
+    },
+    "presentationTimings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "elapsed_seconds",
+        "frame_time_median_ms",
+        "frame_time_p95_ms",
+        "frame_time_p99_ms",
+        "frame_time_max_ms"
+      ],
+      "properties": {
+        "elapsed_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "frame_time_median_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "frame_time_p95_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "frame_time_p99_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "frame_time_max_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "captureEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capture_rule_sha256"],
+      "properties": {
+        "capture_rule_sha256": {
+          "$ref": "#/$defs/sha256Hex"
+        },
+        "captured_concrete_files": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      }
+    },
+    "gateResults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "l0_0_containment",
+        "l0_1_launch",
+        "l0_2_acceleration",
+        "l0_3_present",
+        "l0_4_churn",
+        "l0_5_maintenance"
+      ],
+      "properties": {
+        "l0_0_containment": {
+          "$ref": "#/$defs/gateState"
+        },
+        "l0_1_launch": {
+          "$ref": "#/$defs/gateState"
+        },
+        "l0_2_acceleration": {
+          "$ref": "#/$defs/gateState"
+        },
+        "l0_3_present": {
+          "$ref": "#/$defs/gateState"
+        },
+        "l0_4_churn": {
+          "$ref": "#/$defs/gateState"
+        },
+        "l0_5_maintenance": {
+          "$ref": "#/$defs/gateState"
+        }
+      }
+    },
+    "gateState": {
+      "type": "string",
+      "enum": ["not-run", "pass", "fail", "inconclusive"]
+    },
+    "structuredFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "message"],
+      "properties": {
+        "stage": {
+          "type": "string",
+          "enum": [
+            "preflight",
+            "containment",
+            "launch",
+            "graphics",
+            "presentation",
+            "churn",
+            "maintenance",
+            "unknown"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "details": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      }
+    }
+  }
+}

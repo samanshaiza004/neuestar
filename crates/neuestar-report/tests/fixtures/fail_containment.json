@@ -1,0 +1,63 @@
+{
+  "schema": "neuestar.report/v1",
+  "artifact": {
+    "outer_archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "payload_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+    "probe_version": "0.1.0"
+  },
+  "matrix_cell": {
+    "distro": "nixos",
+    "gpu_vendor": "nvidia",
+    "display_server": "x11"
+  },
+  "observed_host": {
+    "distro_id": "nixos 25.05",
+    "kernel_release": "6.12.0",
+    "architecture": "x86_64",
+    "gpu_description": "NVIDIA GeForce RTX 3080",
+    "driver_version": "580.82.09"
+  },
+  "containment": {
+    "namespace_constructed": false,
+    "forbidden_preparation": [
+      {
+        "kind": "sudo",
+        "description": "runner used sudo to install an AppArmor profile"
+      }
+    ]
+  },
+  "runtime": {
+    "libc_source": "not-determined"
+  },
+  "graphics": {
+    "renderer": "not-determined",
+    "renderer_description": "not reached",
+    "device": "not reached"
+  },
+  "presentation": {
+    "frames_requested": 0,
+    "frames_presented": 0,
+    "validation_errors": 0,
+    "device_loss": false
+  },
+  "capture": {
+    "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "gates": {
+    "l0_0_containment": "fail",
+    "l0_1_launch": "not-run",
+    "l0_2_acceleration": "not-run",
+    "l0_3_present": "not-run",
+    "l0_4_churn": "not-run",
+    "l0_5_maintenance": "not-run"
+  },
+  "classification": "fail",
+  "failure": {
+    "stage": "containment",
+    "message": "containment refused and forbidden preparation was recorded",
+    "details": [
+      "AppArmor denied unprivileged user namespace"
+    ]
+  }
+}
