@@ -1,0 +1,24 @@
+[package]
+name = "neuestar-probe-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+hex.workspace = true
+libc.workspace = true
+neuestar-report = { path = "../neuestar-report" }
+serde_json.workspace = true
+sha2.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "neuestar-probe"
+path = "src/main.rs"
+
