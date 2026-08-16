@@ -2,4 +2,3 @@
 
 /// Current report schema identifier.
 pub const SCHEMA_VERSION: &str = "neuestar.report/v1";
-
