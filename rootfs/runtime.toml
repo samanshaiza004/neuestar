@@ -1,0 +1,23 @@
+schema = "neuestar.runtime/v1"
+generation = "gate-l0-phase1"
+architecture = "x86_64"
+libc_mode = "neuestar"
+
+[containment]
+helper = "libexec/bwrap"
+unshare_user = true
+unshare_mount = true
+unshare_pid = true
+unshare_ipc = true
+unshare_uts = true
+unshare_network = true
+host_usr_exposed = false
+host_lib_exposed = false
+host_lib64_exposed = false
+host_etc_exposed = false
+host_home_exposed = false
+
+[application]
+host_path = "app/probe"
+sandbox_path = "/app/probe"
+

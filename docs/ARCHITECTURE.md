@@ -54,12 +54,18 @@ must use explicit test-owned fonts rather than platform font metrics.
    payload-manifest identity; the outer archive checksum is published beside
    the archive and supplied to every run. An archive cannot embed its own hash
    without a circular definition, so both hashes are verified and reported.
-3. The canonical build pins source, Rust, bubblewrap source, and the controlled
-   root input. Build timestamps use `SOURCE_DATE_EPOCH`; ownership, modes, path
-   ordering, and archive timestamps are normalized.
+3. The canonical build pins source and Rust, records the exact bubblewrap bytes
+   and controlled-root manifest, and normalizes timestamps, ownership, modes,
+   path ordering, and archive compression. The first campaign prioritizes one
+   immutable, auditable build; independent bit-for-bit reconstruction of the
+   distribution-provided helper remains an explicit unresolved reproducibility
+   risk rather than a hidden claim.
 4. The launcher invokes an artifact-bundled bubblewrap and its dependency
-   closure. It does not accept a host `bwrap` fallback. If bundling is not
-   viable, L0.0 is unresolved/failing rather than silently host-dependent.
+   closure. Before execution it clears the outer loader environment, disables
+   `ld.so.cache`, asks the bundled loader to list eager dependency resolution,
+   and rejects every resolved path outside `libexec`. It does not accept a host
+   `bwrap` or helper-library fallback. If bundling is not viable, L0.0 is
+   unresolved/failing rather than silently host-dependent.
 5. Physical matrix workflows are manual and label-routed. They download and
    verify one canonical archive and always upload evidence; they never build.
 
@@ -67,4 +73,3 @@ Alternatives rejected for falsifiability: `$ORIGIN`/`LD_LIBRARY_PATH`-only
 packaging, host filesystem passthrough, Flatpak/Steam/AppImage runtimes,
 per-distro builds, automatic driver upgrades, software-renderer acceptance, and
 containerized fake matrix cells.
-

@@ -62,7 +62,7 @@
       "type": "string",
       "minLength": 64,
       "maxLength": 64,
-      "pattern": "^[0-9a-fA-F]{64}$"
+      "pattern": "^[0-9a-f]{64}$"
     },
     "artifact": {
       "type": "object",
@@ -82,8 +82,7 @@
         },
         "source_commit": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 64
+          "pattern": "^[0-9a-f]{40}$"
         },
         "probe_version": {
           "type": "string",
@@ -126,6 +125,11 @@
           "minLength": 1,
           "maxLength": 128
         },
+        "distro_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
         "kernel_release": {
           "type": "string",
           "minLength": 1,
@@ -150,16 +154,58 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 32
+        },
+        "current_desktop": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "desktop_session": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         }
       }
     },
     "containmentEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["namespace_constructed"],
+      "required": [
+        "namespace_constructed",
+        "user_namespace_constructed",
+        "mount_namespace_constructed"
+      ],
       "properties": {
         "namespace_constructed": {
           "type": "boolean"
+        },
+        "user_namespace_constructed": {
+          "type": "boolean"
+        },
+        "mount_namespace_constructed": {
+          "type": "boolean"
+        },
+        "user_namespace_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "mount_namespace_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "errno": {
+          "type": "integer"
+        },
+        "host_paths_exposed": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
         },
         "forbidden_preparation": {
           "type": "array",
@@ -199,11 +245,38 @@
     "runtimeEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["libc_source"],
+      "required": ["libc_source", "host_glibc_imported"],
       "properties": {
         "libc_source": {
           "type": "string",
           "enum": ["controlled", "host-glibc", "not-determined"]
+        },
+        "libc_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "libc_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "host_glibc_imported": {
+          "type": "boolean"
+        },
+        "host_glibc_reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "host_glibc_paths": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
         },
         "host_glibc_path": {
           "type": "string",
@@ -238,7 +311,12 @@
     "graphicsEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["renderer", "renderer_description", "device"],
+      "required": [
+        "renderer",
+        "renderer_description",
+        "device",
+        "software_renderer_detected"
+      ],
       "properties": {
         "renderer": {
           "type": "string",
@@ -249,10 +327,48 @@
           "minLength": 1,
           "maxLength": 256
         },
+        "vulkan_loader": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
         "device": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "icd_library": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "vendor_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "device_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "driver_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "driver_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "device_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "software_renderer_detected": {
+          "type": "boolean"
         },
         "icd_manifests": {
           "type": "array",
@@ -348,6 +464,11 @@
         "device_loss": {
           "type": "boolean"
         },
+        "present_mode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
         "timings": {
           "$ref": "#/$defs/presentationTimings"
         }
@@ -366,7 +487,7 @@
       "properties": {
         "elapsed_seconds": {
           "type": "number",
-          "minimum": 0
+          "exclusiveMinimum": 0
         },
         "frame_time_median_ms": {
           "type": "number",
@@ -389,7 +510,13 @@
     "captureEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["capture_rule_sha256"],
+      "required": [
+        "capture_rule_sha256",
+        "dependency_count",
+        "vendor_specific_rule_count",
+        "distro_specific_rule_count",
+        "host_path_count"
+      ],
       "properties": {
         "capture_rule_sha256": {
           "$ref": "#/$defs/sha256Hex"
@@ -402,6 +529,42 @@
             "minLength": 1,
             "maxLength": 1024
           }
+        },
+        "capture_reasons": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "captured_devices": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "dependency_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "vendor_specific_rule_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "distro_specific_rule_count": {
+          "const": 0
+        },
+        "host_path_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
         }
       }
     },
@@ -444,7 +607,7 @@
     "structuredFailure": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["stage", "message"],
+      "required": ["stage", "code", "message"],
       "properties": {
         "stage": {
           "type": "string",
@@ -458,6 +621,11 @@
             "maintenance",
             "unknown"
           ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         },
         "message": {
           "type": "string",

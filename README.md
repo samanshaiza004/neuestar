@@ -28,3 +28,16 @@ Canonical Linux artifacts are built only by `scripts/build-probe.sh` on Linux
 x86_64 or by the hosted build workflow. Matrix runners download that artifact;
 they never rebuild it.
 
+A physical Phase 1 attempt must declare its asserted cell and the verified
+outer archive hash:
+
+```sh
+./neuestar-probe \
+  --archive-sha256 "$EXPECTED_SHA256" \
+  --distro ubuntu --gpu nvidia --display wayland \
+  --report report.json
+```
+
+The report separately contains host values observed at runtime. A successful
+Phase 1 attempt passes only L0.0/L0.1; later graphics gates remain explicitly
+unrun and the overall attempt is not classified as a Gate L0 pass.

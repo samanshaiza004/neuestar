@@ -1,0 +1,206 @@
+name: Gate L0 physical cell
+
+on:
+  workflow_dispatch:
+    inputs:
+      distro:
+        description: Target distribution label
+        required: true
+        type: choice
+        options: [fedora, ubuntu, arch, nixos]
+      gpu:
+        description: Target GPU vendor label
+        required: true
+        type: choice
+        options: [intel, amd, nvidia]
+      display:
+        description: Target display protocol label
+        required: true
+        type: choice
+        options: [wayland, x11]
+      artifact_url_or_run_id:
+        description: HTTPS URL for the direct canonical archive, or a GitHub Actions run ID containing canonical-artifact
+        required: true
+        type: string
+      expected_archive_sha:
+        description: Expected 64-character SHA-256 of the canonical archive
+        required: true
+        type: string
+
+# Physical evidence is operator-controlled and intentionally never collected
+# by push/PR automation. Hosted runners and containers cannot satisfy this
+# matrix's distro, namespace, ABI, GPU-driver, or display requirements.
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  run:
+    name: L0 ${{ inputs.distro }} / ${{ inputs.gpu }} / ${{ inputs.display }}
+    # The labels are cumulative. Choice inputs are closed values, so this
+    # expression routes only to the exact requested physical cell.
+    runs-on: ${{ fromJSON(format('["self-hosted","linux","x64","distro-{0}","gpu-{1}","display-{2}"]', inputs.distro, inputs.gpu, inputs.display)) }}
+    timeout-minutes: 30
+    env:
+      ARTIFACT_REF: ${{ inputs.artifact_url_or_run_id }}
+      EXPECTED_ARCHIVE_SHA: ${{ inputs.expected_archive_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out runner-side scripts
+        # actions/checkout v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Download and verify canonical archive, then run once
+        id: physical-run
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          evidence_dir="$RUNNER_TEMP/neuestar-evidence"
+          download_dir="$RUNNER_TEMP/neuestar-download"
+          root_dir="$RUNNER_TEMP/neuestar-root"
+          mkdir -p "$evidence_dir" "$download_dir" "$root_dir"
+
+          if [[ $(id -u) -eq 0 ]]; then
+            echo 'physical Gate L0 must run as an ordinary non-root user' > "$evidence_dir/stderr.log"
+            exit 77
+          fi
+
+          if ! [[ "$EXPECTED_ARCHIVE_SHA" =~ ^[[:xdigit:]]{64}$ ]]; then
+            echo 'expected_archive_sha must be exactly 64 hexadecimal characters' >&2
+            exit 2
+          fi
+
+          # A numeric ref is downloaded through GitHub's artifact API. A URL
+          # is deliberately restricted to HTTPS and must still match the
+          # caller-supplied digest before any archive operation occurs.
+          if [[ "$ARTIFACT_REF" =~ ^[0-9]+$ ]]; then
+            gh run download "$ARTIFACT_REF" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name canonical-artifact \
+              --dir "$download_dir"
+          elif [[ "$ARTIFACT_REF" == https://* ]]; then
+            curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+              --output "$download_dir/direct-archive" "$ARTIFACT_REF"
+          else
+            echo 'artifact_url_or_run_id must be a numeric run ID or an HTTPS URL' >&2
+            exit 2
+          fi
+
+          archive_path=''
+          while IFS= read -r -d '' candidate; do
+            case "$candidate" in
+              *.sha256|*/SHA256SUMS|*/artifact.json) continue ;;
+            esac
+            actual_sha="$(sha256sum "$candidate" | cut -d ' ' -f 1)"
+            if [[ "$actual_sha" == "${EXPECTED_ARCHIVE_SHA,,}" ]]; then
+              archive_path="$candidate"
+              break
+            fi
+          done < <(find "$download_dir" -type f -print0)
+
+          if [[ -z "$archive_path" ]]; then
+            echo 'no downloaded file matched expected_archive_sha; refusing extraction' >&2
+            exit 3
+          fi
+
+          printf '%s  %s\n' "${EXPECTED_ARCHIVE_SHA,,}" "$archive_path" > "$evidence_dir/archive.sha256"
+          printf '%s\n' 'verified canonical archive:' "$archive_path"
+          # The outer digest is checked above; this second check validates the
+          # embedded payload identity before the run's extraction.
+          test -x scripts/verify-artifact.sh
+          scripts/verify-artifact.sh "$archive_path" "${EXPECTED_ARCHIVE_SHA,,}" > "$evidence_dir/artifact-verification.log"
+
+          # Identify the normalized tar.zst (with fallbacks for local test
+          # builders) only after its digest has been verified.
+          if tar --zstd -tf "$archive_path" >/dev/null 2>&1; then
+            tar --zstd -xf "$archive_path" -C "$root_dir"
+          elif tar -tzf "$archive_path" >/dev/null 2>&1; then
+            tar -xzf "$archive_path" -C "$root_dir"
+          elif tar -tf "$archive_path" >/dev/null 2>&1; then
+            tar -xf "$archive_path" -C "$root_dir"
+          else
+            echo 'verified file is not a supported tar archive' >&2
+            exit 4
+          fi
+
+          find "$download_dir" -type f \( -name artifact.json -o -name SHA256SUMS \) \
+            -exec cp --no-clobber '{}' "$evidence_dir/" \; || true
+          artifact_manifest="$(find "$root_dir" -type f -name artifact.json -print -quit || true)"
+          if [[ -n "$artifact_manifest" ]]; then
+            cp "$artifact_manifest" "$evidence_dir/artifact.json"
+          fi
+          runtime_manifest="$(find "$root_dir" -type f -name rootfs.SHA256SUMS -print -quit || true)"
+          if [[ -n "$runtime_manifest" ]]; then
+            cp "$runtime_manifest" "$evidence_dir/rootfs.SHA256SUMS"
+          fi
+          capture_plan="$(find "$root_dir" -type f -name capture-plan.json -print -quit || true)"
+          if [[ -n "$capture_plan" ]]; then
+            cp "$capture_plan" "$evidence_dir/capture-plan.json"
+          fi
+
+          {
+            date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
+            uname -a
+            id
+            if [[ -r /etc/os-release ]]; then cat /etc/os-release; fi
+            if command -v lspci >/dev/null 2>&1; then lspci -nn; fi
+          } > "$evidence_dir/host-metadata.txt" 2>&1 || true
+          {
+            echo '--- loader commands ---'
+            if command -v vulkaninfo >/dev/null 2>&1; then vulkaninfo --summary; fi
+            if command -v ldconfig >/dev/null 2>&1; then ldconfig -p; fi
+            if [[ -r /proc/1/mountinfo ]]; then sed -n '1,240p' /proc/1/mountinfo; fi
+          } > "$evidence_dir/vulkan-loader-diagnostics.log" 2>&1 || true
+
+          probe="${root_dir}/bin/neuestar-probe"
+          if [[ ! -x "$probe" ]]; then
+            probe="$(find "$root_dir" -type f -name neuestar-probe -perm -u+x -print -quit || true)"
+          fi
+          run_status=126
+          if [[ -n "$probe" && -x "$probe" ]]; then
+            set +e
+            (
+              cd "$evidence_dir"
+              "$probe" \
+                --archive-sha256 "${EXPECTED_ARCHIVE_SHA,,}" \
+                --distro "${{ inputs.distro }}" \
+                --gpu "${{ inputs.gpu }}" \
+                --display "${{ inputs.display }}" \
+                --report report.json \
+                > stdout.log 2> stderr.log
+              probe_status=$?
+              exit "$probe_status"
+            )
+            run_status=$?
+            set -e
+          else
+            echo 'canonical artifact did not contain executable bin/neuestar-probe' > "$evidence_dir/stderr.log"
+            : > "$evidence_dir/stdout.log"
+          fi
+
+          # A missing report remains a failure; it is intentionally not
+          # synthesized as a passing result. Upload happens in the next step.
+          printf 'probe_exit_status=%s\n' "$run_status" > "$evidence_dir/exit-status.txt"
+          exit "$run_status"
+      - name: Upload physical evidence
+        if: always()
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: l0-evidence-${{ github.run_id }}-${{ inputs.distro }}-${{ inputs.gpu }}-${{ inputs.display }}
+          path: |
+            ${{ runner.temp }}/neuestar-evidence/report.json
+            ${{ runner.temp }}/neuestar-evidence/stdout.log
+            ${{ runner.temp }}/neuestar-evidence/stderr.log
+            ${{ runner.temp }}/neuestar-evidence/capture-plan.json
+            ${{ runner.temp }}/neuestar-evidence/vulkan-loader-diagnostics.log
+            ${{ runner.temp }}/neuestar-evidence/host-metadata.txt
+            ${{ runner.temp }}/neuestar-evidence/host-metadata.json
+            ${{ runner.temp }}/neuestar-evidence/child-result.json
+            ${{ runner.temp }}/neuestar-evidence/archive.sha256
+            ${{ runner.temp }}/neuestar-evidence/artifact-verification.log
+            ${{ runner.temp }}/neuestar-evidence/SHA256SUMS
+            ${{ runner.temp }}/neuestar-evidence/rootfs.SHA256SUMS
+            ${{ runner.temp }}/neuestar-evidence/artifact.json
+            ${{ runner.temp }}/neuestar-evidence/exit-status.txt
+          if-no-files-found: warn

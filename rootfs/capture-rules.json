@@ -1,0 +1,16 @@
+{
+  "schema": "neuestar.capture-rules/v1",
+  "generic_discovery": [
+    "discover Vulkan ICD manifests without distribution-name matching",
+    "resolve concrete shared libraries from manifest references and ELF DT_NEEDED closure",
+    "record every captured file and source path before namespace construction"
+  ],
+  "vendor_specific_rules": [
+    {
+      "category": "nvidia-device-nodes",
+      "applies_to": "nvidia",
+      "description": "Expose only concrete NVIDIA device nodes observed on the physical host"
+    }
+  ],
+  "distro_specific_rules": []
+}

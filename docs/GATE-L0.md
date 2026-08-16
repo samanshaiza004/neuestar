@@ -24,7 +24,10 @@ to exposing already-existing NVIDIA device nodes. The hard cap is one.
 ## Gates
 
 - L0.0 containment: an ordinary extracted download constructs the required
-  controlled namespace without forbidden preparation.
+  controlled namespace without forbidden preparation. The trusted child must
+  also report user and mount namespace identities that differ from the
+  launcher's pre-containment `/proc/self/ns` identities; an environment marker
+  alone is not sufficient evidence.
 - L0.1 launch: the native child reaches its entry point without ELF interpreter
   or unresolved-symbol failure.
 - L0.2 acceleration: the selected Vulkan device is real hardware. llvmpipe,
@@ -57,4 +60,3 @@ Success requires a schema-valid report. A missing/malformed report is failure.
 Containment or launch failures use distinct nonzero exit codes and still write
 the most complete report technically possible. Physical evidence, not hosted
 CI, decides the gates.
-

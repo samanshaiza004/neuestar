@@ -10,8 +10,10 @@ anyhow.workspace = true
 clap.workspace = true
 hex.workspace = true
 libc.workspace = true
+neuestar-host-inspect = { path = "../neuestar-host-inspect" }
 neuestar-report = { path = "../neuestar-report" }
 serde_json.workspace = true
+serde.workspace = true
 sha2.workspace = true
 toml.workspace = true
 
@@ -22,3 +24,5 @@ workspace = true
 name = "neuestar-probe"
 path = "src/main.rs"
 
+[dev-dependencies]
+tempfile.workspace = true

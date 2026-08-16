@@ -19,16 +19,31 @@
     "driver_version": "580.82.09"
   },
   "containment": {
-    "namespace_constructed": true
+    "namespace_constructed": true,
+    "user_namespace_constructed": true,
+    "mount_namespace_constructed": true,
+    "user_namespace_id": "user:[2]",
+    "mount_namespace_id": "mnt:[4]"
   },
   "runtime": {
     "libc_source": "controlled",
+    "libc_path": "/lib/libc.so.6",
+    "libc_version": "2.39",
+    "host_glibc_imported": false,
     "interpreter": "/neuestar/ld-linux-x86-64.so.2"
   },
   "graphics": {
     "renderer": "hardware",
     "renderer_description": "NVIDIA Vulkan driver",
+    "vulkan_loader": "/lib/libvulkan.so.1",
     "device": "NVIDIA GeForce RTX 3080",
+    "icd_library": "/host-driver/libvulkan_nvidia.so",
+    "vendor_id": 4318,
+    "device_id": 8710,
+    "driver_name": "NVIDIA",
+    "driver_version": "580.82.09",
+    "device_type": "discrete-gpu",
+    "software_renderer_detected": false,
     "vendor_specific_rules": [
       {
         "category": "nvidia-device-nodes",
@@ -41,6 +56,7 @@
     "frames_presented": 300,
     "validation_errors": 0,
     "device_loss": false,
+    "present_mode": "fifo",
     "timings": {
       "elapsed_seconds": 8.42,
       "frame_time_median_ms": 24.9,
@@ -50,7 +66,11 @@
     }
   },
   "capture": {
-    "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "dependency_count": 0,
+    "vendor_specific_rule_count": 1,
+    "distro_specific_rule_count": 0,
+    "host_path_count": 0
   },
   "gates": {
     "l0_0_containment": "pass",

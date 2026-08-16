@@ -41,6 +41,13 @@ vendor documentation; downstream blogs are not used as implementation truth.
   RPATH, `LD_LIBRARY_PATH`, RUNPATH, cache, and defaults in a defined order.
   RUNPATH applies only to direct children. `LD_BIND_NOW` resolves symbols at
   startup and `--inhibit-cache` permits cache-independent diagnostics.
+- [glibc `elf/dl-version.c`](https://sourceware.org/git/?p=glibc.git;a=blob;f=elf/dl-version.c;hb=HEAD):
+  the dynamic loader walks `DT_VERNEED` requirements and the dependency's
+  `DT_VERDEF` records, matching both version hash and string and raising a
+  version-lookup error for an unavailable non-weak version. A captured driver
+  closure can therefore resolve every filename yet still fail against an older
+  controlled glibc; L0 diagnostics must preserve that as ABI evidence rather
+  than retry with host libc invisibly.
 - [Nixpkgs reference manual, fixup phase](https://nixos.org/manual/nixpkgs/stable/#ssec-fixup-phase):
   Nixpkgs post-processes Linux ELF RPATHs with `patchelf`, and runtime inputs live
   in store paths. Generic RPATH/RUNPATH traversal—not `/etc/ld.so.cache`—is a
@@ -60,4 +67,3 @@ version records, Wayland/X11 WSI requirements, Vulkan validation setup, and the
 current NVIDIA node surface. Before physical lab enrollment, re-check each
 target's current user-namespace policy and GitHub runner security guidance.
 Contradictions update this file and gate status; they do not create exceptions.
-

@@ -206,6 +206,9 @@ pub struct Artifact {
 pub struct ObservedHost {
     /// Observed distribution identifier, including a version when known.
     pub distro_id: String,
+    /// Observed distribution version, when published by the host.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distro_version: Option<String>,
     /// Observed kernel release.
     pub kernel_release: String,
     /// Observed CPU architecture.
@@ -218,6 +221,12 @@ pub struct ObservedHost {
     /// Observed display server, when determinable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_server: Option<String>,
+    /// Observed current desktop identifier, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_desktop: Option<String>,
+    /// Observed desktop session identifier, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub desktop_session: Option<String>,
 }
 
 /// Evidence for L0.0 namespace construction.
@@ -226,6 +235,22 @@ pub struct ObservedHost {
 pub struct ContainmentEvidence {
     /// Whether the ordinary extracted download constructed the namespace.
     pub namespace_constructed: bool,
+    /// Whether the requested user namespace was proven constructed.
+    pub user_namespace_constructed: bool,
+    /// Whether the requested mount namespace was proven constructed.
+    pub mount_namespace_constructed: bool,
+    /// Child user-namespace identity from procfs, when containment ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_namespace_id: Option<String>,
+    /// Child mount-namespace identity from procfs, when containment ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mount_namespace_id: Option<String>,
+    /// OS errno recorded at containment failure, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub errno: Option<i32>,
+    /// Exact host paths deliberately exposed inside containment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_paths_exposed: Vec<String>,
     /// Forbidden preparation actions that were actually attempted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forbidden_preparation: Vec<ForbiddenPreparation>,
@@ -283,6 +308,20 @@ pub enum LibcSource {
 pub struct RuntimeEvidence {
     /// Which C runtime the child executed against.
     pub libc_source: LibcSource,
+    /// Concrete libc path selected inside the namespace, when observed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub libc_path: Option<String>,
+    /// Observed libc version string, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub libc_version: Option<String>,
+    /// Explicit redundant evidence flag for host-glibc assimilation.
+    pub host_glibc_imported: bool,
+    /// Reason host glibc was imported, when it was imported.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_glibc_reason: Option<String>,
+    /// Concrete host-glibc closure paths, empty for a controlled clean run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_glibc_paths: Vec<String>,
     /// Concrete host glibc path when `libc_source` is `host-glibc`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_glibc_path: Option<String>,
@@ -317,8 +356,31 @@ pub struct GraphicsEvidence {
     pub renderer: RendererKind,
     /// Renderer description reported by the Vulkan stack.
     pub renderer_description: String,
+    /// Vulkan loader used by the attempt, when graphics ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vulkan_loader: Option<String>,
     /// Selected Vulkan device description.
     pub device: String,
+    /// ICD library selected from a manifest, when graphics ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icd_library: Option<String>,
+    /// Vulkan vendor ID, when a physical device was enumerated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vendor_id: Option<u32>,
+    /// Vulkan device ID, when a physical device was enumerated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<u32>,
+    /// Driver name reported by Vulkan, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub driver_name: Option<String>,
+    /// Driver version reported by Vulkan, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub driver_version: Option<String>,
+    /// Vulkan physical-device type, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_type: Option<String>,
+    /// Explicit software-renderer detection result.
+    pub software_renderer_detected: bool,
     /// Explicit ICD manifests used by generic discovery.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub icd_manifests: Vec<String>,
@@ -376,6 +438,9 @@ pub struct PresentationEvidence {
     pub validation_errors: u32,
     /// Whether the Vulkan device was lost.
     pub device_loss: bool,
+    /// Selected Vulkan present mode, when presentation ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub present_mode: Option<String>,
     /// Complete timing summary; required for a passing L0.3.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timings: Option<PresentationTimings>,
@@ -406,6 +471,20 @@ pub struct CaptureEvidence {
     /// Concrete files captured by generic discovery.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub captured_concrete_files: Vec<String>,
+    /// Generic discovery reasons corresponding to captured material.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capture_reasons: Vec<String>,
+    /// Concrete host device nodes exposed to the namespace.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub captured_devices: Vec<String>,
+    /// Number of resolved dependency files in the captured closure.
+    pub dependency_count: u32,
+    /// Number of vendor-specific rules applied by this attempt.
+    pub vendor_specific_rule_count: u8,
+    /// Number of distro-specific rules applied; validation requires zero.
+    pub distro_specific_rule_count: u8,
+    /// Number of host paths exposed to the namespace.
+    pub host_path_count: u32,
 }
 
 /// Optional structured failure attached to a failed attempt.
@@ -414,6 +493,8 @@ pub struct CaptureEvidence {
 pub struct StructuredFailure {
     /// Stage in which the failure occurred.
     pub stage: FailureStage,
+    /// Stable machine-readable failure code.
+    pub code: String,
     /// Short failure message.
     pub message: String,
     /// Additional diagnostic detail.

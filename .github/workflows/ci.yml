@@ -1,0 +1,28 @@
+name: Hosted CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Hosted CI validates the canonical implementation only. It is never physical
+# matrix evidence: namespace, ABI, driver, and display behavior require a
+# manually dispatched run on an operator-controlled self-hosted machine.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Format, lint, test, and static checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # actions/checkout v4.2.2
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Run repository checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x scripts/check.sh
+          scripts/check.sh

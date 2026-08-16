@@ -30,15 +30,41 @@ fn host_glibc_cannot_be_clean_pass() {
     let mut report = clean_report();
     report.runtime.libc_source = LibcSource::HostGlibc;
     report.runtime.host_glibc_path = Some("/usr/lib/libc.so.6".to_owned());
+    report.runtime.host_glibc_imported = true;
+    report.runtime.host_glibc_reason = Some("driver ABI".to_owned());
+    report.runtime.host_glibc_paths = vec!["/usr/lib/libc.so.6".to_owned()];
 
     let error = report.validate().unwrap_err();
     assert!(matches!(error, ReportError::HostGlibcCleanPass));
 }
 
 #[test]
+fn clean_pass_requires_controlled_libc_and_l01_requires_runtime_evidence() {
+    let mut unknown = clean_report();
+    unknown.runtime.libc_source = LibcSource::NotDetermined;
+    unknown.runtime.libc_path = None;
+    assert!(matches!(
+        unknown.validate().unwrap_err(),
+        ReportError::CleanPassRequiresControlledLibc { .. }
+            | ReportError::L01RuntimeEvidenceMissing
+    ));
+
+    let mut unresolved = clean_report();
+    unresolved
+        .runtime
+        .unresolved_symbols
+        .push("missing_symbol".to_owned());
+    assert!(matches!(
+        unresolved.validate().unwrap_err(),
+        ReportError::L01RuntimeEvidenceMissing
+    ));
+}
+
+#[test]
 fn software_renderer_cannot_pass_l02() {
     let mut report = clean_report();
     report.graphics.renderer = RendererKind::Software;
+    report.graphics.software_renderer_detected = true;
 
     let error = report.validate().unwrap_err();
     assert!(matches!(error, ReportError::SoftwareRendererPass));
@@ -48,11 +74,13 @@ fn software_renderer_cannot_pass_l02() {
 fn software_renderer_with_failed_l02_is_recordable() {
     let mut report = clean_report();
     report.graphics.renderer = RendererKind::Software;
+    report.graphics.software_renderer_detected = true;
     report.gates.l0_2_acceleration = GateState::Fail;
     report.gates.l0_3_present = GateState::NotRun;
     report.classification = Classification::Fail;
     report.failure = Some(neuestar_report::StructuredFailure {
         stage: neuestar_report::FailureStage::Graphics,
+        code: "software-renderer".to_owned(),
         message: "llvmpipe selected".to_owned(),
         details: Vec::new(),
     });
@@ -165,6 +193,21 @@ fn nan_and_infinity_timings_are_rejected() {
 }
 
 #[test]
+fn timing_percentiles_must_be_ordered() {
+    let mut report = clean_report();
+    report
+        .presentation
+        .timings
+        .as_mut()
+        .unwrap()
+        .frame_time_p95_ms = 10.0;
+    assert!(matches!(
+        report.validate().unwrap_err(),
+        ReportError::TimingOrder
+    ));
+}
+
+#[test]
 fn forbidden_preparation_requires_l00_fail_and_fail_classification() {
     let mut report = clean_report();
     report
@@ -199,7 +242,10 @@ fn forbidden_preparation_requires_l00_fail_and_fail_classification() {
 fn incomplete_attempts_are_recordable_without_inventing_success() {
     let mut report = clean_report();
     report.containment.namespace_constructed = false;
+    report.containment.user_namespace_constructed = false;
+    report.containment.mount_namespace_constructed = false;
     report.runtime.libc_source = LibcSource::NotDetermined;
+    report.runtime.libc_path = None;
     report.runtime.interpreter = None;
     report.graphics.renderer = RendererKind::NotDetermined;
     report.presentation.frames_requested = 0;
@@ -216,6 +262,7 @@ fn incomplete_attempts_are_recordable_without_inventing_success() {
     report.classification = Classification::Fail;
     report.failure = Some(neuestar_report::StructuredFailure {
         stage: neuestar_report::FailureStage::Preflight,
+        code: "attempt-incomplete".to_owned(),
         message: "attempt ended before containment".to_owned(),
         details: Vec::new(),
     });
@@ -225,9 +272,8 @@ fn incomplete_attempts_are_recordable_without_inventing_success() {
     invented_success.classification = Classification::CleanPass;
     assert!(matches!(
         invented_success.validate().unwrap_err(),
-        ReportError::PassFunctionalGateNotPass {
-            gate: "l0_0_containment",
-            ..
+        ReportError::CleanPassRequiresControlledLibc {
+            libc_source: LibcSource::NotDetermined
         }
     ));
 
@@ -265,6 +311,17 @@ fn missing_and_malformed_reports_are_rejected() {
     let mut missing_field = serde_json::to_value(clean_report()).unwrap();
     missing_field.as_object_mut().unwrap().remove("gates");
     assert!(serde_json::from_value::<Report>(missing_field).is_err());
+
+    let mut uppercase_hash = clean_report();
+    uppercase_hash.artifact.outer_archive_sha256 = "A".repeat(64);
+    assert!(uppercase_hash.validate().is_err());
+
+    let mut malformed_source = clean_report();
+    malformed_source.artifact.source_commit = "not-a-git-commit".to_owned();
+    assert!(matches!(
+        malformed_source.validate().unwrap_err(),
+        ReportError::SourceCommitFormat
+    ));
 }
 
 #[test]

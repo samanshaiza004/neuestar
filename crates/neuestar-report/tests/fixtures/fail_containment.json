@@ -20,6 +20,8 @@
   },
   "containment": {
     "namespace_constructed": false,
+    "user_namespace_constructed": false,
+    "mount_namespace_constructed": false,
     "forbidden_preparation": [
       {
         "kind": "sudo",
@@ -28,12 +30,14 @@
     ]
   },
   "runtime": {
-    "libc_source": "not-determined"
+    "libc_source": "not-determined",
+    "host_glibc_imported": false
   },
   "graphics": {
     "renderer": "not-determined",
     "renderer_description": "not reached",
-    "device": "not reached"
+    "device": "not reached",
+    "software_renderer_detected": false
   },
   "presentation": {
     "frames_requested": 0,
@@ -42,7 +46,11 @@
     "device_loss": false
   },
   "capture": {
-    "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "dependency_count": 0,
+    "vendor_specific_rule_count": 0,
+    "distro_specific_rule_count": 0,
+    "host_path_count": 0
   },
   "gates": {
     "l0_0_containment": "fail",
@@ -55,6 +63,7 @@
   "classification": "fail",
   "failure": {
     "stage": "containment",
+    "code": "forbidden-preparation",
     "message": "containment refused and forbidden preparation was recorded",
     "details": [
       "AppArmor denied unprivileged user namespace"

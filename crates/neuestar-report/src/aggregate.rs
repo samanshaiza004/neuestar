@@ -51,6 +51,30 @@ pub enum CampaignError {
         /// Second payload manifest hash observed.
         second: String,
     },
+    /// Reports use more than one capture-rule identity.
+    #[error("mixed capture-rule SHA-256 across reports: {first} and {second}")]
+    MixedCaptureRuleHashes {
+        /// First capture-rule hash observed.
+        first: String,
+        /// Different capture-rule hash observed.
+        second: String,
+    },
+    /// Reports use more than one source commit.
+    #[error("mixed source commits across reports: {first} and {second}")]
+    MixedSourceCommits {
+        /// First source commit observed.
+        first: String,
+        /// Different source commit observed.
+        second: String,
+    },
+    /// Reports use more than one probe version.
+    #[error("mixed probe versions across reports: {first} and {second}")]
+    MixedProbeVersions {
+        /// First probe version observed.
+        first: String,
+        /// Different probe version observed.
+        second: String,
+    },
 }
 
 /// Validates a campaign and returns every violation found.
@@ -100,6 +124,12 @@ fn collect_mixed_hashes(campaign: &Campaign, errors: &mut Vec<CampaignError>) {
     let mut outer_second = None;
     let mut payload_first = None;
     let mut payload_second = None;
+    let mut capture_first = None;
+    let mut capture_second = None;
+    let mut source_first = None;
+    let mut source_second = None;
+    let mut version_first = None;
+    let mut version_second = None;
     for entry in &campaign.cells {
         let Some(report) = &entry.report else {
             continue;
@@ -114,12 +144,36 @@ fn collect_mixed_hashes(campaign: &Campaign, errors: &mut Vec<CampaignError>) {
             &mut payload_second,
             &report.artifact.payload_manifest_sha256,
         );
+        record_hash(
+            &mut capture_first,
+            &mut capture_second,
+            &report.capture.capture_rule_sha256,
+        );
+        record_hash(
+            &mut source_first,
+            &mut source_second,
+            &report.artifact.source_commit,
+        );
+        record_hash(
+            &mut version_first,
+            &mut version_second,
+            &report.artifact.probe_version,
+        );
     }
     if let (Some(first), Some(second)) = (outer_first, outer_second) {
         errors.push(CampaignError::MixedOuterArchiveHashes { first, second });
     }
     if let (Some(first), Some(second)) = (payload_first, payload_second) {
         errors.push(CampaignError::MixedPayloadHashes { first, second });
+    }
+    if let (Some(first), Some(second)) = (capture_first, capture_second) {
+        errors.push(CampaignError::MixedCaptureRuleHashes { first, second });
+    }
+    if let (Some(first), Some(second)) = (source_first, source_second) {
+        errors.push(CampaignError::MixedSourceCommits { first, second });
+    }
+    if let (Some(first), Some(second)) = (version_first, version_second) {
+        errors.push(CampaignError::MixedProbeVersions { first, second });
     }
 }
 

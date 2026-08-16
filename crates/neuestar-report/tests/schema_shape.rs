@@ -41,6 +41,20 @@ fn schema_enforces_gate_states_classification_and_rule_caps() {
         root["$defs"]["vendorSpecificRule"]["properties"]["category"]["const"],
         json!("nvidia-device-nodes")
     );
+    assert_eq!(
+        root["$defs"]["artifact"]["properties"]["source_commit"]["pattern"],
+        json!("^[0-9a-f]{40}$")
+    );
+    assert!(
+        root["$defs"]["runtimeEvidence"]["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("host_glibc_imported"))
+    );
+    assert_eq!(
+        root["$defs"]["captureEvidence"]["properties"]["distro_specific_rule_count"]["const"],
+        json!(0)
+    );
 }
 
 #[test]

@@ -79,6 +79,46 @@ fn mixed_payload_hashes_are_rejected() {
 }
 
 #[test]
+fn mixed_capture_source_and_probe_identities_are_rejected() {
+    let cells = [
+        cell(),
+        MatrixCell {
+            display_server: DisplayServer::X11,
+            ..cell()
+        },
+    ];
+    let mut campaign = campaign_with_runs(&cells);
+    let report = campaign
+        .cells
+        .iter_mut()
+        .find(|entry| entry.cell == cells[0])
+        .unwrap()
+        .report
+        .as_mut()
+        .unwrap();
+    report.capture.capture_rule_sha256 = "d".repeat(64);
+    report.artifact.source_commit = "f".repeat(40);
+    report.artifact.probe_version = "0.2.0".to_owned();
+
+    let errors = campaign.validate().unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, CampaignError::MixedCaptureRuleHashes { .. }))
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, CampaignError::MixedSourceCommits { .. }))
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, CampaignError::MixedProbeVersions { .. }))
+    );
+}
+
+#[test]
 fn duplicate_matrix_cell_identity_is_rejected() {
     let campaign = Campaign {
         cells: vec![
@@ -149,6 +189,7 @@ fn report_cell_mismatch_is_rejected() {
     entry.report.as_mut().unwrap().gates.l0_0_containment = neuestar_report::GateState::Fail;
     entry.report.as_mut().unwrap().failure = Some(neuestar_report::StructuredFailure {
         stage: neuestar_report::FailureStage::Containment,
+        code: "cell-mismatch".to_owned(),
         message: "cell mismatch".to_owned(),
         details: Vec::new(),
     });

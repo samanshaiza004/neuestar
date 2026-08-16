@@ -1,0 +1,136 @@
+name: Gate L0 aggregate evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      campaign:
+        description: Explicit campaign identifier to aggregate
+        required: true
+        type: string
+      evidence_run_id:
+        description: GitHub Actions run ID that contains the physical evidence artifact
+        required: true
+        type: string
+      evidence_artifact_name:
+        description: Exact uploaded evidence artifact name (not a wildcard)
+        required: true
+        type: string
+      expected_archive_sha:
+        description: Expected archive SHA-256 for every report in this campaign
+        required: true
+        type: string
+
+# Aggregation is a manual evidence operation. It never turns an unrun cell
+# into a pass: missing/invalid reports remain failures or not-run in the
+# report command, and hosted CI is not physical matrix evidence.
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  aggregate:
+    name: Aggregate ${{ inputs.campaign }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CAMPAIGN: ${{ inputs.campaign }}
+      EVIDENCE_RUN_ID: ${{ inputs.evidence_run_id }}
+      EVIDENCE_ARTIFACT_NAME: ${{ inputs.evidence_artifact_name }}
+      EXPECTED_ARCHIVE_SHA: ${{ inputs.expected_archive_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out source and aggregation command
+        # actions/checkout v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Download and validate explicit evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          report_dir="$RUNNER_TEMP/neuestar-reports"
+          mkdir -p "$report_dir"
+          if ! [[ "$EVIDENCE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo 'evidence_run_id must be numeric' >&2
+            exit 2
+          fi
+          if ! [[ "$EVIDENCE_ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo 'evidence_artifact_name contains unsupported characters' >&2
+            exit 2
+          fi
+          if ! [[ "$EXPECTED_ARCHIVE_SHA" =~ ^[[:xdigit:]]{64}$ ]]; then
+            echo 'expected_archive_sha must be exactly 64 hexadecimal characters' >&2
+            exit 2
+          fi
+          gh run download "$EVIDENCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$EVIDENCE_ARTIFACT_NAME" \
+            --dir "$report_dir"
+
+          report_count="$(find "$report_dir" -type f -name report.json | wc -l | tr -d ' ')"
+          if [[ "$report_count" -eq 0 ]]; then
+            echo 'no report.json files were downloaded; refusing to infer success' >&2
+            exit 3
+          fi
+          if ! command -v jq >/dev/null 2>&1; then
+            echo 'jq is required to validate report JSON without interpreting it as shell input' >&2
+            exit 4
+          fi
+          while IFS= read -r -d '' report; do
+            if ! jq -e 'type == "object"' "$report" >/dev/null; then
+              echo "invalid report JSON: $report" >&2
+              exit 5
+            fi
+            hash_file="$(dirname "$report")/archive.sha256"
+            if [[ ! -s "$hash_file" ]]; then
+              echo "missing archive.sha256 beside report: $report" >&2
+              exit 6
+            fi
+            if ! grep -Eiq "^[[:space:]]*${EXPECTED_ARCHIVE_SHA}[[:space:]]" "$hash_file"; then
+              echo "archive hash mismatch beside report: $report" >&2
+              exit 7
+            fi
+          done < <(find "$report_dir" -type f -name report.json -print0)
+
+          {
+            printf 'campaign=%s\n' "$CAMPAIGN"
+            printf 'evidence_run_id=%s\n' "$EVIDENCE_RUN_ID"
+            printf 'evidence_artifact_name=%s\n' "$EVIDENCE_ARTIFACT_NAME"
+            printf 'expected_archive_sha=%s\n' "${EXPECTED_ARCHIVE_SHA,,}"
+            printf 'report_count=%s\n' "$report_count"
+          } > "$RUNNER_TEMP/neuestar-aggregate-inputs.txt"
+      - name: Run repository aggregator without filling unrun cells
+        shell: bash
+        run: |
+          set -euo pipefail
+          report_dir="$RUNNER_TEMP/neuestar-reports"
+          output_file="$RUNNER_TEMP/neuestar-aggregate-result.json"
+
+          # No aggregate binary exists in the current scaffold. This branch
+          # intentionally fails closed until a repository command implements
+          # the report schema; it can never claim that missing cells passed.
+          if [[ -f crates/neuestar-report/src/bin/aggregate.rs ]]; then
+            cargo run -p neuestar-report --bin aggregate -- \
+              --campaign "$CAMPAIGN" \
+              --reports-dir "$report_dir" \
+              --archive-sha "${EXPECTED_ARCHIVE_SHA,,}" \
+              --output "$output_file"
+          elif [[ -x scripts/aggregate-reports.sh ]]; then
+            scripts/aggregate-reports.sh \
+              --campaign "$CAMPAIGN" \
+              --reports-dir "$report_dir" \
+              --archive-sha "${EXPECTED_ARCHIVE_SHA,,}" \
+              --output "$output_file"
+          else
+            echo 'no repository aggregation command is available; evidence was not classified' >&2
+            exit 78
+          fi
+      - name: Upload aggregate inputs and result
+        if: always()
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: l0-aggregate-${{ github.run_id }}-${{ inputs.campaign }}
+          path: |
+            ${{ runner.temp }}/neuestar-reports/
+            ${{ runner.temp }}/neuestar-aggregate-inputs.txt
+            ${{ runner.temp }}/neuestar-aggregate-result.json
+          if-no-files-found: warn

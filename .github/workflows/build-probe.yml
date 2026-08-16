@@ -1,0 +1,58 @@
+name: Build canonical probe
+
+on:
+  push:
+  workflow_dispatch:
+
+# This job creates one hosted canonical artifact. Hosted Linux is not a
+# physical distro/GPU/display result and must not be counted as matrix data.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Linux x86_64 canonical artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      # actions/checkout v4.2.2
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install declared Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends bubblewrap jq musl-tools pax-utils zstd
+          rustup target add x86_64-unknown-linux-musl
+      - name: Build once
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x scripts/build-probe.sh
+          mkdir -p "$RUNNER_TEMP/neuestar-build"
+          NEUESTAR_DIST_DIR="$RUNNER_TEMP/neuestar-build" scripts/build-probe.sh
+      - name: Rebuild and compare canonical bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/neuestar-rebuild"
+          NEUESTAR_DIST_DIR="$RUNNER_TEMP/neuestar-rebuild" scripts/build-probe.sh
+          cmp \
+            "$RUNNER_TEMP/neuestar-build/neuestar-probe-x86_64.tar.zst" \
+            "$RUNNER_TEMP/neuestar-rebuild/neuestar-probe-x86_64.tar.zst"
+      # actions/upload-artifact v4.6.2
+      - name: Upload canonical outputs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: canonical-artifact
+          path: |
+            ${{ runner.temp }}/neuestar-build/**/*.tar
+            ${{ runner.temp }}/neuestar-build/**/*.tar.zst
+            ${{ runner.temp }}/neuestar-build/**/*.tar.gz
+            ${{ runner.temp }}/neuestar-build/**/*.tgz
+            ${{ runner.temp }}/neuestar-build/**/*.sha256
+            ${{ runner.temp }}/neuestar-build/**/artifact.json
+            ${{ runner.temp }}/neuestar-build/**/SHA256SUMS
+          if-no-files-found: error

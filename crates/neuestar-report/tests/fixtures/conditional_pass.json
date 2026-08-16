@@ -19,10 +19,21 @@
     "driver_version": "25.0"
   },
   "containment": {
-    "namespace_constructed": true
+    "namespace_constructed": true,
+    "user_namespace_constructed": true,
+    "mount_namespace_constructed": true,
+    "user_namespace_id": "user:[2]",
+    "mount_namespace_id": "mnt:[4]"
   },
   "runtime": {
     "libc_source": "host-glibc",
+    "libc_path": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+    "libc_version": "2.39",
+    "host_glibc_imported": true,
+    "host_glibc_reason": "driver requires host symbol versions",
+    "host_glibc_paths": [
+      "/usr/lib/x86_64-linux-gnu/libc.so.6"
+    ],
     "host_glibc_path": "/usr/lib/x86_64-linux-gnu/libc.so.6",
     "interpreter": "/lib64/ld-linux-x86-64.so.2",
     "loader_diagnostics": [
@@ -32,13 +43,22 @@
   "graphics": {
     "renderer": "hardware",
     "renderer_description": "AMD RADV driver",
-    "device": "AMD Radeon RX 7900 XT"
+    "vulkan_loader": "/usr/lib/libvulkan.so.1",
+    "device": "AMD Radeon RX 7900 XT",
+    "icd_library": "/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so",
+    "vendor_id": 4098,
+    "device_id": 29772,
+    "driver_name": "radv",
+    "driver_version": "25.0",
+    "device_type": "discrete-gpu",
+    "software_renderer_detected": false
   },
   "presentation": {
     "frames_requested": 300,
     "frames_presented": 300,
     "validation_errors": 0,
     "device_loss": false,
+    "present_mode": "fifo",
     "timings": {
       "elapsed_seconds": 7.94,
       "frame_time_median_ms": 22.1,
@@ -51,7 +71,11 @@
     "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     "captured_concrete_files": [
       "/usr/lib/x86_64-linux-gnu/libvulkan_radeon.so"
-    ]
+    ],
+    "dependency_count": 1,
+    "vendor_specific_rule_count": 0,
+    "distro_specific_rule_count": 0,
+    "host_path_count": 0
   },
   "gates": {
     "l0_0_containment": "pass",
