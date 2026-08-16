@@ -1,0 +1,65 @@
+{
+  "schema": "neuestar.report/v2",
+  "artifact": {
+    "outer_archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "payload_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+    "probe_version": "0.2.0"
+  },
+  "matrix_cell": {
+    "distro": "nixos",
+    "gpu_vendor": "nvidia",
+    "display_server": "wayland"
+  },
+  "observed_host": {
+    "distro_id": "nixos 26.05",
+    "kernel_release": "6.18.44",
+    "architecture": "x86_64",
+    "gpu_description": "not-observed-phase-1",
+    "display_server": "wayland"
+  },
+  "containment": {
+    "namespace_constructed": false,
+    "user_namespace_constructed": false,
+    "mount_namespace_constructed": false,
+    "substage": "helper-execution",
+    "process_stderr": "bwrap: Can't create file at /app/probe: Read-only file system"
+  },
+  "runtime": {
+    "libc_source": "not-determined",
+    "host_glibc_imported": false
+  },
+  "graphics": {
+    "renderer": "not-determined",
+    "renderer_description": "not reached",
+    "device": "not reached",
+    "software_renderer_detected": false
+  },
+  "presentation": {
+    "frames_requested": 0,
+    "frames_presented": 0,
+    "validation_errors": 0,
+    "device_loss": false
+  },
+  "capture": {
+    "capture_rule_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "dependency_count": 0,
+    "vendor_specific_rule_count": 0,
+    "distro_specific_rule_count": 0,
+    "host_path_count": 0
+  },
+  "gates": {
+    "l0_0_containment": "fail",
+    "l0_1_launch": "not-run",
+    "l0_2_acceleration": "not-run",
+    "l0_3_present": "not-run",
+    "l0_4_churn": "not-run",
+    "l0_5_maintenance": "not-run"
+  },
+  "classification": "fail",
+  "failure": {
+    "stage": "containment",
+    "code": "containment-failed",
+    "message": "bubblewrap or child exited with status 71"
+  }
+}
