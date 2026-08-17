@@ -2,9 +2,12 @@
 
 Status: FULL-VM PREFLIGHT evidence only. The virtual machines below validated the
 unchanged-artifact pipeline, the Wayland-session prerequisite, and the transition
-from preflight rejection to a genuine L0.0 containment failure. They are never
-physical Gate L0 evidence (see [GATE-L0.md](GATE-L0.md)); physical cells still
-require label-routed NVIDIA+Wayland hosts.
+from preflight rejection into containment-phase execution — which exposed **two
+Campaign 001 specimen defects** (over-scoped network-namespace setup on Ubuntu;
+a read-only-root bind-mount defect on NixOS). Campaign 001 is closed as an
+apparatus-failure campaign; see [CAMPAIGN-001-VERDICT.md](CAMPAIGN-001-VERDICT.md).
+It is never physical Gate L0 evidence (see [GATE-L0.md](GATE-L0.md)) and is not
+to be run on physical machines.
 
 Raw machine-readable evidence lives beside this document in
 [`full-vm-lab-evidence/`](full-vm-lab-evidence/). The authoritative state record
@@ -82,8 +85,9 @@ logged-in GNOME Wayland session:
   guided layout on `/dev/vda` — `vda1` 1 GiB vfat ESP, `vda2` 2 GiB ext4 `/boot`,
   `vda3` LVM root (`ubuntu-vg/ubuntu-lv`, 19 GiB).
 - autoinstall identity: hostname `ubuntu-2604-wayland-preflight`, user `lab`
-  (sudo, lab-recorded password `gfqVrcpZ3PEadY`), `ssh.install-server: true` with
-  the lab ed25519 key, package `gdm3`.
+  (sudo; a password-auth credential was provisioned by the autoinstall —
+  redacted from this record and treated as compromised after review),
+  `ssh.install-server: true` with the lab ed25519 key, package `gdm3`.
 - Post-install lab provisioning (ordinary lab access only): `lab` added as GDM
   `AutomaticLogin` (`/etc/gdm3/custom.conf`) so the guest boots to a real logged-in
   desktop; everything else is stock Ubuntu 26.04 LTS.
@@ -186,9 +190,12 @@ These are the values Campaign 001 was executed with.
   paths captured, no host glibc import, exactly 1 predeclared vendor rule
   (`nvidia-device-nodes`).
 - Guest namespace policy at run time: `kernel.apparmor_restrict_unprivileged_userns`
-  = `1` — Ubuntu 26.04 restricts unprivileged user-namespace creation for
-  unprofiled processes, exactly the policy documented in
-  [RESEARCH.md](RESEARCH.md). The denial is reported, not bypassed.
+  = `1` — Ubuntu 26.04 restricts unprivileged user namespaces for unprofiled
+  processes, per [RESEARCH.md](RESEARCH.md). Attribution is measured: the failure
+  occurred while bubblewrap configured the isolated loopback interface of the
+  additionally requested network namespace; it is consistent with Ubuntu's
+  user-namespace/capability restrictions, but it does **not** establish that the
+  user+mount namespace boundary required by L0 is impossible.
 
 ### 7.3 NixOS 26.05 guest (graphical) — observed
 
@@ -200,16 +207,29 @@ These are the values Campaign 001 was executed with.
   `not-run`, stage `containment`, no namespace constructed, no host paths
   captured, no host glibc import.
 - Unlike Ubuntu, NixOS did not deny unprivileged user namespaces; bubblewrap
-  advanced into mount/root construction and stopped at a filesystem-write step of
-  its controlled root. This is a **different L0.0 sub-failure** from the Ubuntu
-  policy denial, not a preflight rejection.
+  progressed into mount/root construction and exposed a **Campaign 001
+  mount-plan defect**: the launcher mounts the controlled root read-only at `/`
+  (`--ro-bind <artifact>/root /`, `crates/neuestar-probe-launcher/src/main.rs`),
+  then binds the application binary to a destination that does not exist inside
+  that root (`--ro-bind <artifact>/app/probe /app/probe`; the builder creates
+  `root/app/` but never `root/app/probe` — `scripts/build-rootfs.sh`).
+  bubblewrap must create the `/app/probe` destination inside the read-only root
+  and fails deterministically (`bwrap: Can't create file at /app/probe:
+  Read-only file system`). The identical bind shape reproduced on the host
+  (`bwrap: Can't mkdir parents for /app/probe: Read-only file system`). This is
+  a specimen defect, not NixOS compatibility evidence, and is not attributed to
+  the platform.
 
 ### 7.4 Summary
 
-| Guest | observed display | failure (launcher stderr) | exit | failure stage | L0.0 | L0.1..5 |
-|---|---|---|---|---|---|---|
-| ubuntu-2604-wayland-preflight | `wayland` | `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` | 71 | containment | fail | not-run |
-| nixos-2605-wayland-preflight | `wayland` | `bwrap: Can't create file at /app/probe: Read-only file system` | 71 | containment | fail | not-run |
+| Guest | observed display | failure (launcher stderr) | exit | stage | attribution |
+|---|---|---|---|---|---|
+| ubuntu-2604-wayland-preflight | `wayland` | `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` | 71 | containment | specimen over-scope: netns isolation beyond L0; failed during loopback setup under Ubuntu userns policy |
+| nixos-2605-wayland-preflight | `wayland` | `bwrap: Can't create file at /app/probe: Read-only file system` | 71 | containment | specimen defect: bind destination missing inside the read-only mounted root |
+
+For both: `gates.l0_0_containment` = `fail`, `l0_1`–`l0_5` = `not-run`,
+classification `fail`, no namespace constructed, no host paths captured, no host
+glibc import.
 
 ## 8. Preflight rejection vs actual L0.0 namespace failure
 
@@ -229,11 +249,22 @@ The experiment now distinguishes the two outcomes operationally and by exit code
 - **Actual L0.0 namespace failure** means the run passed preflight against a
   real observed Wayland session and bubblewrap failed during namespace/root
   construction.
-- Two distinct genuine L0.0 modes were observed in phase 2: (1) Ubuntu-style
-  AppArmor-mediated unprivileged-userns denial (`RTM_NEWADDR: EPERM`), and
-  (2) a NixOS run where unprivileged userns was permitted but bubblewrap could
-  not create a file in its own controlled root (`/app/probe: Read-only file
-  system`). Both are reported verbatim; neither was engineered around.
+- Phase 2 produced **two Campaign 001 specimen defects**, not two platform
+  constraints:
+  1. **Ubuntu 26.04** — the specimen requests network-namespace isolation
+     (`--unshare-net`, plus `--unshare-pid/ipc/uts`) beyond L0's required
+     user+mount boundary and fails during loopback configuration
+     (`RTM_NEWADDR: EPERM`). This is consistent with Ubuntu's AppArmor
+     user-namespace/capability restrictions, but it does **not** establish that
+     the user+mount namespace boundary required by L0 is impossible.
+  2. **NixOS 26.05** — the specimen's mount plan binds the application to a
+     destination (`/app/probe`) absent from the read-only mounted root; a
+     deterministic root-construction failure (reproduced on the host).
+  Neither result is attributed to the distribution; neither was engineered
+  around. The additional unshares are likewise beyond the L0 contract and are
+  out of scope for Campaign 002 unless one is demonstrated required by the
+  compatibility experiment (containment at L0 is ABI/environment control, not a
+  security sandbox).
 
 Consistent with [KILL-CONDITIONS.md](KILL-CONDITIONS.md) and
 [GATE-L0.md](GATE-L0.md), refusal by host policy is a recorded L0.0 result, never
@@ -258,32 +289,25 @@ record is `full-vm-lab-evidence/STATE.md`.
 Repository impact of this document: docs only. No Rust source, schema, rootfs,
 build script, or workflow changed; the canonical artifact identity is untouched.
 
-## 10. Implications for the physical plan
+## 10. Verdict — an apparatus-failure campaign
 
-What the VMs established:
+Campaign 001 successfully validated artifact identity, cross-distro execution
+through launcher preflight, real Wayland-session observation, failure reporting,
+and experimental provenance — and the full-VM run then **falsified Campaign 001
+as a suitable L0.0/L0.1 specimen before physical testing**. Two probe-design
+issues were discovered (Section 8):
 
-1. The unchanged-artifact pipeline and the launcher's declared-host guard behave
-   as designed across two fresh graphical full-VM environments (exit 65
-   preflight-only prefix; exit 71 containment failures after a real Wayland
-   observation).
-2. The matrix's Wayland cell vocabulary matches a real GNOME Wayland session
-   (loginctl `Type=wayland` + live socket + session env); the "guest-headless"
-   defeat that produced phase-1 rejections is now characterized and closed at the
-   VM level.
-3. First in-VM observations of genuine L0.0 namespace failures inside full VMs,
-   in two distinct modes (Ubuntu userns policy denial; NixOS bubblewrap
-   controlled-root write failure).
+1. On Ubuntu 26.04, Campaign 001 requests network-namespace isolation beyond
+   L0's required user+mount namespace boundary and fails during loopback
+   configuration under Ubuntu's security policy.
+2. On NixOS 26.05, Campaign 001's mount plan attempts to create `/app/probe`
+   after mounting its root filesystem read-only, a deterministic
+   root-construction failure.
 
-What the VMs cannot establish: physical Gate L0 evidence. Namespace/ABI/driver/
-display behavior on physical NVIDIA hosts is not modeled by virtio-gpu guests.
-Nothing in this document changes the gate contract: L0.0–L0.5 remain unproven on
-physical hardware, and the closure of the physical matrix (Fedora, Ubuntu LTS,
-Arch, NixOS × Intel/AMD/NVIDIA × Wayland/X11) with the canonical unchanged
-archive remains the campaign's next falsifier (see [CI-LAB.md](CI-LAB.md),
-[GATE-L0.md](GATE-L0.md), [STATUS.md](STATUS.md)).
-
-Open item for the physical plan: the NixOS `.Read-only file system` failure
-inside this VM is a bubblewrap/controlled-root construction issue that should be
-re-derived from the Phase 1 report-level diagnostics on a physical NixOS cell
-rather than investigated through VM-only instrumentation — it is not a reason to
-relax any kill condition.
+**Neither result falsifies the Linux Substrate hypothesis.** Both justify a new
+immutable Campaign 002 specimen with the minimum user+mount containment
+contract (full verdict and 002 charter:
+[CAMPAIGN-001-VERDICT.md](CAMPAIGN-001-VERDICT.md)). Campaign 001 remains
+permanently preserved as evidence and must never be retroactively reclassified;
+it is **not** to be run on physical machines. Physical matrix execution resumes
+only after Campaign 002 passes L0.0/L0.1 in exactly these two VMs.

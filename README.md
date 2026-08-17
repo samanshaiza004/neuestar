@@ -17,6 +17,8 @@ containment behavior.
 
 Full-VM preflight lab evidence (graphical guests, Wayland sessions, and the
 preflight-rejection vs L0.0-failure distinction): [docs/full-vm-lab.md](docs/full-vm-lab.md).
+Campaign 001 apparatus-failure verdict and Campaign 002 charter:
+[docs/CAMPAIGN-001-VERDICT.md](docs/CAMPAIGN-001-VERDICT.md).
 
 ## Development
 

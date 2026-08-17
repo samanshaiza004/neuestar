@@ -75,7 +75,7 @@ Two NEW full-VM guests `ubuntu-2604-wayland-preflight` and `nixos-2605-wayland-p
 | install | subiquity autoinstall (seed ISO; UEFI; ESP vda1 1G, boot vda2 2G, LVM root vda3) | GNOME profile; GRUB EFI removable |
 | guest HW | Q35 + OVMF + host-passthrough, 4 vCPU, 8 GiB, VirtIO disk+net, **VirtIO virtual GPU (virtio-vga)** + SPICE (127.0.0.1:5901), serial tcp 2301 | same, SPICE 5900, serial 2302 |
 | OS | Ubuntu 26.04 LTS, kernel 7.0.0-29-generic, systemd-detect-virt kvm, /dev/dri card1+renderD128 (virtio-gpu) | NixOS 26.05, kernel 6.18.44, kvm, gnome-shell 50.4 |
-| user | lab (sudo, password gfqVrcpZ3PEadY, ssh key) | lab (wheel) |
+| user | lab (sudo; autoinstall credential provisioned — redacted from this record) | lab (wheel) |
 | display manager | gdm3, **AutomaticLoginEnable + AutomaticLogin=lab** (custom.conf) | GDM autologin (configured during iso install phase) |
 
 Post-install final run configs are disk-only (ISOs detached after install; no cdrom in final XML): `ubuntu-wayland-campaign/ubuntu-2604-wayland-run.xml`, `nixos-wayland-campaign/nixos-2605-wayland-final.xml`. The transitional install domains (ISOs attached) are preserved (`ubuntu-wayland-campaign/ubuntu-wayland-install-domain.xml`, earlier uefi2/3/pty/direct XMLs).
