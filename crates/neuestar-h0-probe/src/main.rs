@@ -1,19 +1,23 @@
-//! `h0-probe` — minimal H0 probe (GATE-H0, H0.P). Unintegrated: candidate
-//! `none`. Reproduces the frozen Campaign 002 minimum user+mount containment
-//! shape without display/GPU preflight, records host/LSM state, and emits a
-//! `neuestar.h0/v1` record. The Campaign 002 artifact is used read-only.
+//! `h0-probe` — minimal H0 probe (GATE-H0, H0.P). Unintegrated (candidate
+//! `none`), single outcome run: the frozen Campaign 002 child under the exact
+//! frozen containment command (shared via neuestar-probe-core), with the
+//! Campaign 002 success predicate (helper exit + namespace-change proof +
+//! controlled libc) and no display/GPU preflight. Emits `neuestar.h0/v1`.
+//!
+//! The dedicated security-evidence invocation (CapEff/profile) is reserved
+//! for H0.1S and is not part of H0.P.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use neuestar_h0_probe::child::{read_child_evidence, run_child_mode};
-use neuestar_h0_probe::containment::{
-    outcome_argv, outcome_command, run_contained, sha256_file, verify_artifact,
-};
+use neuestar_h0_probe::child::run_child_mode;
+use neuestar_h0_probe::containment::{ContainmentError, run_contained};
 use neuestar_h0_probe::host::{collect_host, collect_security_state};
 use neuestar_h0_probe::record::{Outcome, build};
+use neuestar_probe_core::artifact;
+use neuestar_probe_core::command::{contained_command, frozen_child_exec};
 
 const EXIT_OK: u8 = 0;
 const EXIT_APPARATUS: u8 = 2;
@@ -28,10 +32,6 @@ struct Cli {
     /// Frozen Campaign 002 outer archive SHA-256 (recorded as runtime identity).
     #[arg(long)]
     archive_sha256: String,
-
-    /// Frozen Campaign 002 payload manifest SHA-256 (verified against artifact.json).
-    #[arg(long)]
-    expected_payload_sha256: String,
 
     /// Where the neuestar.h0/v1 record is written.
     #[arg(long, default_value = "h0-report.json")]
@@ -49,11 +49,11 @@ struct Cli {
     #[arg(long)]
     dry_run: bool,
 
-    /// Internal: run as the contained child and write child evidence.
+    /// Internal: reserved for the H0.1S security-evidence invocation.
     #[arg(long, hide = true)]
     child_mode: bool,
 
-    /// Internal: child evidence destination (inside /evidence).
+    /// Internal: child evidence destination (reserved for H0.1S).
     #[arg(long, hide = true)]
     child_result: Option<PathBuf>,
 }
@@ -79,126 +79,187 @@ fn run(cli: &Cli) -> Result<u8> {
     }
 
     let report_parent = prepare_report_parent(&cli.report)?;
-    let probe_self = std::env::current_exe().context("failed to locate probe binary")?;
-    let argv = outcome_argv(&report_parent, &cli.artifact_root, &probe_self, false);
+    let host = collect_host();
+    let security_state = collect_security_state();
+    let timestamp = timestamp();
+    let session_id = format!("{timestamp}-{}", std::process::id());
+    let parent_user_ns = namespace_identity("/proc/self/ns/user");
+    let parent_mount_ns = namespace_identity("/proc/self/ns/mnt");
+
+    // Full frozen artifact preflight (identical to Campaign 002), executed
+    // before anything else so a divergence can never be blamed on a weaker
+    // verifier. Verification failure is an apparatus-stage failure record.
+    let metadata = match artifact::verify_payload(&cli.artifact_root) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            write_apparatus_failure(
+                cli,
+                &host,
+                &security_state,
+                &timestamp,
+                &session_id,
+                &report_parent,
+                "artifact-verification",
+                &format!("{error:#}"),
+                &parent_user_ns,
+                &parent_mount_ns,
+            )?;
+            return Ok(EXIT_OK);
+        }
+    };
+
+    // Bundled-helper closure preflight (identical to Campaign 002): the
+    // bundled loader must resolve bwrap only inside the controlled artifact.
+    if let Err(error) =
+        neuestar_probe_core::helper::verify_bundled_helper_resolution(&cli.artifact_root)
+    {
+        write_apparatus_failure(
+            cli,
+            &host,
+            &security_state,
+            &timestamp,
+            &session_id,
+            &report_parent,
+            "helper-closure-verification",
+            &format!("{error:#}"),
+            &parent_user_ns,
+            &parent_mount_ns,
+        )?;
+        return Ok(EXIT_OK);
+    }
+
+    // Stale-evidence rejection: historical files must never influence a new
+    // classification (Campaign 002 behavior).
+    let child_result_path = report_parent.join("child-result.json");
+    let child_evidence_path = report_parent.join("h0-child-evidence.json");
+    if child_result_path.exists() || child_evidence_path.exists() {
+        write_apparatus_failure(
+            cli,
+            &host,
+            &security_state,
+            &timestamp,
+            &session_id,
+            &report_parent,
+            "stale-evidence",
+            "evidence directory already contains child-result.json or h0-child-evidence.json; use a fresh evidence directory",
+            &parent_user_ns,
+            &parent_mount_ns,
+        )?;
+        return Ok(EXIT_OK);
+    }
+
+    let probe_sha256 = sha256_self();
+    let mut command = contained_command(
+        &report_parent,
+        &cli.artifact_root,
+        &cli.archive_sha256,
+        &metadata,
+        &frozen_child_exec(),
+    );
+    let argv: Vec<String> = command
+        .get_args()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect();
     if cli.dry_run {
-        for arg in argv.as_slice() {
+        for arg in &argv {
             println!("{arg}");
         }
         return Ok(EXIT_OK);
     }
 
-    let host = collect_host();
-    let security_state = collect_security_state();
-    let timestamp = timestamp();
-    let session_id = format!("{timestamp}-{}", std::process::id());
-
-    // Artifact verification failure is an apparatus-stage failure record
-    // (fail-closed), not a silent exit.
-    let verified = verify_artifact(&cli.artifact_root, &cli.expected_payload_sha256);
-    let (pre_host_state, post_host_state, probe_sha256) = state_dumps(&host, cli, &report_parent);
-
-    if let Err(error) = verified {
-        let record = build(
-            &host,
-            &security_state,
-            &timestamp,
-            &session_id,
-            &cli.archive_sha256,
-            &cli.expected_payload_sha256,
-            &probe_sha256,
-            argv.as_slice(),
-            &cli.iso_snapshot_date,
-            &cli.config_surface,
-            false,
-            false,
-            None,
-            None,
-            &pre_host_state,
-            &post_host_state,
-            &Outcome::Fail {
-                stage: "apparatus",
-                code: "artifact-verification",
-                message: format!("{error:#}"),
-            },
-        )?;
-        write_json(&cli.report, &record)?;
-        return Ok(EXIT_OK);
-    }
-
-    let parent_user_ns = namespace_identity("/proc/self/ns/user");
-    let parent_mount_ns = namespace_identity("/proc/self/ns/mnt");
-
-    // Outcome run: the frozen controlled-glibc child under the minimum
-    // user+mount boundary (Campaign 002 equivalence).
-    let mut command = outcome_command(&report_parent, &cli.artifact_root, &probe_self, false);
-    let run = run_contained(&mut command)?;
-    let Some(run) = run else {
-        return Ok(EXIT_APPARATUS);
+    let run = match run_contained(&mut command) {
+        Ok(run) => run,
+        Err(ContainmentError::Spawn(error)) => {
+            write_apparatus_failure(
+                cli,
+                &host,
+                &security_state,
+                &timestamp,
+                &session_id,
+                &report_parent,
+                "helper-spawn-failed",
+                &format!("{error:#}"),
+                &parent_user_ns,
+                &parent_mount_ns,
+            )?;
+            return Ok(EXIT_OK);
+        }
+        Err(ContainmentError::Wait(error)) => {
+            write_apparatus_failure(
+                cli,
+                &host,
+                &security_state,
+                &timestamp,
+                &session_id,
+                &report_parent,
+                "helper-wait-failed",
+                &format!("{error:#}"),
+                &parent_user_ns,
+                &parent_mount_ns,
+            )?;
+            return Ok(EXIT_OK);
+        }
     };
     let helper_started = true;
     let process_stderr = run.process_stderr;
 
-    let child_result_path = report_parent.join("child-result.json");
+    // Campaign 002 success predicate: helper success, valid bounded child
+    // result, x86_64, user AND mount namespace change vs the probe parent,
+    // no child failure, controlled libc observed.
     let child_result = read_child_result(&child_result_path);
+    let success = run.status == Some(0)
+        && child_result.as_ref().is_some_and(|result| {
+            valid_successful_child_result(result, &parent_user_ns, &parent_mount_ns)
+        });
 
-    let outcome = match &child_result {
-        Some(result) if valid_successful_child_result(result) => Outcome::Pass,
-        Some(result) => Outcome::Fail {
-            stage: "baseline",
-            code: "child-failed",
-            message: child_failure_message(result, run.status),
-        },
-        None => Outcome::Fail {
-            stage: "baseline",
-            code: "child-unreached",
-            message: match &process_stderr {
-                Some(stderr) => stderr.clone(),
-                None => "no child result and no helper stderr".to_owned(),
-            },
-        },
-    };
-    let child_reached =
-        matches!(&child_result, Some(result) if result.contained && result.launch_reached_main);
-
-    // Evidence run (only when the child was reached): the probe re-executes
-    // itself inside the SAME boundary to deterministically record ns identity,
-    // CapEff, and profile label. If this fails, the apparatus is broken: stop
-    // without emitting evidence (fail-closed, no repair).
-    let child_evidence = if child_reached {
-        let mut evidence_command =
-            outcome_command(&report_parent, &cli.artifact_root, &probe_self, true);
-        let evidence_run = run_contained(&mut evidence_command)?;
-        if evidence_run.is_none() {
-            anyhow::bail!("child evidence containment could not start");
-        }
-        let evidence_path = report_parent.join("h0-child-evidence.json");
-        match read_child_evidence(&evidence_path) {
-            Ok(evidence) => Some(evidence),
-            Err(error) => {
-                anyhow::bail!(
-                    "child evidence missing after a reached child ({}); apparatus failure",
-                    error
-                )
-            }
-        }
+    let outcome = if success {
+        Outcome::Pass
     } else {
-        None
+        Outcome::Fail {
+            stage: "baseline",
+            code: match &child_result {
+                Some(result) if result.contained && result.launch_reached_main => "child-failed",
+                _ => "child-unreached",
+            },
+            message: match &child_result {
+                Some(result) if result.contained && result.launch_reached_main => {
+                    child_failure_message(result, run.status)
+                }
+                _ => process_stderr
+                    .clone()
+                    .unwrap_or_else(|| "no child result and no helper stderr".to_owned()),
+            },
+        }
     };
+    let child_reached = child_result
+        .as_ref()
+        .is_some_and(|result| result.contained && result.launch_reached_main);
 
     let post_host_state = format!(
-        "{post_host_state}\nprobe_parent_user_ns={parent_user_ns}\nprobe_parent_mount_ns={parent_mount_ns}\n{}",
+        "probe_parent_user_ns={parent_user_ns}\nprobe_parent_mount_ns={parent_mount_ns}\n{}",
         match &child_result {
             Some(result) => format!(
-                "child_user_ns={}\nchild_mount_ns={}\nchild_launch_reached_main={}\nchild_mapped_libc={}",
+                "child_user_ns={}\nchild_mount_ns={}\nchild_launch_reached_main={}\nchild_architecture={}\nchild_mapped_libc={}",
                 result.user_namespace,
                 result.mount_namespace,
                 result.launch_reached_main,
+                result.architecture,
                 result.mapped_libc_paths.join(",")
             ),
             None => "child_user_ns=unavailable\nchild_mount_ns=unavailable\nchild_mapped_libc="
                 .to_owned(),
         }
+    );
+    let pre_host_state = format!(
+        "os_release={} {} ({})\nkernel={} {}\nlsm_raw={}\nartifact_outer_sha256={}\nreport_parent={}\n",
+        host.distro_id,
+        host.distro_version,
+        host.pretty_name,
+        host.kernel_release,
+        host.architecture,
+        host.lsm_raw,
+        cli.archive_sha256,
+        report_parent.display()
     );
 
     let record = build(
@@ -207,14 +268,19 @@ fn run(cli: &Cli) -> Result<u8> {
         &timestamp,
         &session_id,
         &cli.archive_sha256,
-        &cli.expected_payload_sha256,
+        &metadata.payload_manifest_sha256,
         &probe_sha256,
-        argv.as_slice(),
+        &argv,
         &cli.iso_snapshot_date,
         &cli.config_surface,
         helper_started,
         child_reached,
-        child_evidence.as_ref(),
+        child_result.as_ref().map(|result| {
+            (
+                result.user_namespace.as_str(),
+                result.mount_namespace.as_str(),
+            )
+        }),
         process_stderr.as_deref(),
         &pre_host_state,
         &post_host_state,
@@ -224,10 +290,56 @@ fn run(cli: &Cli) -> Result<u8> {
     Ok(EXIT_OK)
 }
 
+/// Emits an apparatus-stage failure record (fail-closed; the report path is
+/// writable by construction).
+#[allow(clippy::too_many_arguments)]
+fn write_apparatus_failure(
+    cli: &Cli,
+    host: &neuestar_h0_probe::host::HostFacts,
+    security_state: &neuestar_h0_probe::host::SecurityState,
+    timestamp: &str,
+    session_id: &str,
+    report_parent: &std::path::Path,
+    code: &'static str,
+    message: &str,
+    parent_user_ns: &str,
+    parent_mount_ns: &str,
+) -> Result<()> {
+    let record = build(
+        host,
+        security_state,
+        timestamp,
+        session_id,
+        &cli.archive_sha256,
+        "unverified",
+        &sha256_self(),
+        &[],
+        &cli.iso_snapshot_date,
+        &cli.config_surface,
+        false,
+        false,
+        None,
+        None,
+        &format!(
+            "artifact_outer_sha256={}\nreport_parent={}",
+            cli.archive_sha256,
+            report_parent.display()
+        ),
+        &format!("probe_parent_user_ns={parent_user_ns}\nprobe_parent_mount_ns={parent_mount_ns}"),
+        &Outcome::Fail {
+            stage: "apparatus",
+            code,
+            message: message.to_owned(),
+        },
+    )?;
+    write_json(&cli.report, &record)
+}
+
 #[derive(Debug)]
 struct ChildResult {
     contained: bool,
     launch_reached_main: bool,
+    architecture: String,
     user_namespace: String,
     mount_namespace: String,
     mapped_libc_paths: Vec<String>,
@@ -258,6 +370,11 @@ fn read_child_result(path: &std::path::Path) -> Option<ChildResult> {
             .get("launch_reached_main")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
+        architecture: value
+            .get("architecture")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
         user_namespace: value
             .get("user_namespace")
             .and_then(serde_json::Value::as_str)
@@ -297,9 +414,18 @@ fn read_child_result(path: &std::path::Path) -> Option<ChildResult> {
     })
 }
 
-fn valid_successful_child_result(result: &ChildResult) -> bool {
+/// The exact Campaign 002 success predicate, with the probe's own parent
+/// namespaces as the baseline.
+fn valid_successful_child_result(
+    result: &ChildResult,
+    parent_user_ns: &str,
+    parent_mount_ns: &str,
+) -> bool {
     result.contained
         && result.launch_reached_main
+        && result.architecture == "x86_64"
+        && namespace_changed(&result.user_namespace, parent_user_ns, "user:")
+        && namespace_changed(&result.mount_namespace, parent_mount_ns, "mnt:")
         && result.failure.is_none()
         && result
             .mapped_libc_paths
@@ -307,13 +433,17 @@ fn valid_successful_child_result(result: &ChildResult) -> bool {
             .any(|path| path.contains("libc.so"))
 }
 
+fn namespace_changed(child: &str, parent: &str, prefix: &str) -> bool {
+    child.starts_with(prefix) && parent.starts_with(prefix) && child != parent
+}
+
 fn child_failure_message(result: &ChildResult, status: Option<i32>) -> String {
     if let Some(failure) = &result.failure {
         format!("{}: {}", failure.code, failure.explanation)
     } else {
         format!(
-            "child did not produce a successful controlled result (contained={}, launch={}, exit={:?})",
-            result.contained, result.launch_reached_main, status
+            "child did not produce a successful controlled result (contained={}, launch={}, arch={}, exit={:?})",
+            result.contained, result.launch_reached_main, result.architecture, status
         )
     }
 }
@@ -337,37 +467,16 @@ fn prepare_report_parent(report: &std::path::Path) -> Result<PathBuf> {
         .with_context(|| format!("failed to resolve report directory {}", parent.display()))
 }
 
-fn state_dumps(
-    host: &neuestar_h0_probe::host::HostFacts,
-    cli: &Cli,
-    report_parent: &std::path::Path,
-) -> (String, String, String) {
-    let pre = format!(
-        "os_release={} {} ({})\nkernel={} {}\nlsm_raw={}\nartifact_outer_sha256={}\nreport_parent={}\n",
-        host.distro_id,
-        host.distro_version,
-        host.pretty_name,
-        host.kernel_release,
-        host.architecture,
-        host.lsm_raw,
-        cli.archive_sha256,
-        report_parent.display()
-    );
-    (pre, String::new(), sha256_self())
-}
-
 fn sha256_self() -> String {
     std::env::current_exe()
         .ok()
-        .and_then(|path| sha256_file(&path).ok())
+        .and_then(|path| neuestar_probe_core::artifact::sha256_file(&path).ok())
         .unwrap_or_else(|| {
             "0000000000000000000000000000000000000000000000000000000000000000".to_owned()
         })
 }
 
 fn timestamp() -> String {
-    // No chrono dependency: record the wall clock from the environment the
-    // operator can trust; the VM procedure stamps evidence directories anyway.
     std::process::Command::new("date")
         .arg("-u")
         .arg("+%Y-%m-%dT%H:%M:%SZ")

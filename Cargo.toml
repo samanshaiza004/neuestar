@@ -6,6 +6,7 @@ members = [
   "crates/neuestar-h0-probe",
   "crates/neuestar-host-inspect",
   "crates/neuestar-probe-app",
+  "crates/neuestar-probe-core",
   "crates/neuestar-probe-launcher",
   "crates/neuestar-report",
 ]

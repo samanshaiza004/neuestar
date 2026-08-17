@@ -749,6 +749,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "neuestar-probe-core",
  "serde",
  "serde_json",
  "sha2",
@@ -776,6 +777,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "neuestar-probe-core"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "neuestar-probe-launcher"
 version = "0.2.0"
 dependencies = [
@@ -784,6 +797,7 @@ dependencies = [
  "hex",
  "libc",
  "neuestar-host-inspect",
+ "neuestar-probe-core",
  "neuestar-report",
  "serde",
  "serde_json",

@@ -227,6 +227,19 @@ fn check_policy(record: &Value, violations: &mut Vec<Value>) {
         }
     }
 
+    // Forbidden preparation: any recorded forbidden action is a policy
+    // failure (frozen invariants A-L, H0-KILL-CONDITIONS).
+    if record["forbidden_preparation"]
+        .as_array()
+        .is_some_and(|actions| !actions.is_empty())
+    {
+        violations.push(json!({
+            "stage": "threshold",
+            "code": "forbidden-preparation",
+            "message": "forbidden preparation actions were recorded",
+        }));
+    }
+
     // Candidate-specific policy (definitional constraints are schema-side;
     // numeric/maintenance rules live here).
     match record["candidate"].as_str() {
@@ -323,13 +336,18 @@ mod tests {
     fn execution_value(child_reached: bool) -> Value {
         let mut execution = json!({"helper_started": true, "child_reached": child_reached, "helper_profile_label": "neuestar-host"});
         if child_reached {
-            execution["child_profile_label"] = json!("child");
-            execution["child_effective_capabilities"] = json!([]);
-            execution["child_cap_eff_hex"] = json!("0000000000000000");
+            // H0.P outcome evidence: namespace identities only.
             execution["child_user_namespace_id"] = json!("user:[2]");
             execution["child_mount_namespace_id"] = json!("mnt:[4]");
         }
         execution
+    }
+
+    fn add_security_evidence(record: &mut Value) {
+        record["gates"]["h0_1s"] = json!("pass");
+        record["execution"]["child_profile_label"] = json!("child");
+        record["execution"]["child_effective_capabilities"] = json!([]);
+        record["execution"]["child_cap_eff_hex"] = json!("0000000000000000");
     }
 
     fn base(
@@ -355,7 +373,7 @@ mod tests {
             "host": {"distro_id": "ubuntu", "distro_version": "26.04", "kernel_release": "7.0.0-29-generic", "architecture": "x86_64",
                      "target_profile": {"iso_snapshot_date": "2026-08-01", "config_surface": "stock"}},
             "security_state": {"lsm": "apparmor", "apparmor": {"parser_version": "4.0.1", "abi": "abi 5.0", "restriction_sysctl": 1,
-                 "loaded_profiles": [{"name": "neuestar-host", "mode": "enforce"}], "loaded_policy_sha256": S}},
+                 "loaded_profiles": [{"name": "neuestar-host", "mode": "enforce"}], "loaded_profile_state_sha256": S}},
             "candidate": candidate,
             "integration": {"integration_identity_sha256": S, "neuestar_integration_package_sha256": sha,
                             "integration_source_sha256": sha, "security_policy_sha256": sha},
@@ -411,12 +429,26 @@ mod tests {
             "bwrap: setting up uid map: Permission denied",
         );
         assert!(validate(&r).0);
-        // child reached but missing child fields -> schema-invalid
+        // child reached but missing namespace identities -> schema-invalid (H0.P)
+        let mut r = base("A1", Some("s"), true, true);
+        r["execution"]
+            .as_object_mut()
+            .unwrap()
+            .remove("child_user_namespace_id");
+        assert!(!validate(&r).0);
+        // H0.P record without CapEff/profile evidence -> schema-valid
         let mut r = base("A1", Some("s"), true, true);
         r["execution"]
             .as_object_mut()
             .unwrap()
             .remove("child_profile_label");
+        assert!(
+            validate(&r).0,
+            "H0.P must not require H0.1S security evidence"
+        );
+        // H0.1S evaluated without security evidence -> schema-invalid
+        let mut r = base("A1", Some("s"), true, true);
+        r["gates"]["h0_1s"] = json!("pass");
         assert!(!validate(&r).0);
         // B: null package sha property required
         let mut r = base("B", None, false, false);
@@ -429,7 +461,7 @@ mod tests {
         r["security_state"]["apparmor"]
             .as_object_mut()
             .unwrap()
-            .remove("loaded_policy_sha256");
+            .remove("loaded_profile_state_sha256");
         assert!(!validate(&r).0);
         // apparatus missing containment_argv -> schema-invalid
         let mut r = base("A1", Some("s"), true, true);
@@ -548,19 +580,31 @@ mod tests {
     #[test]
     fn h01s_pass_requires_no_retained_capabilities() {
         let mut r = base("A1", Some("s"), true, true);
-        r["gates"]["h0_1s"] = json!("pass");
+        add_security_evidence(&mut r);
         assert!(
             policy(&r).is_empty(),
             "empty CapEff with h0_1s pass is clean"
         );
         let mut r = base("A1", Some("s"), true, true);
-        r["gates"]["h0_1s"] = json!("pass");
+        add_security_evidence(&mut r);
         r["execution"]["child_effective_capabilities"] = json!(["CAP_SYS_ADMIN"]);
         r["execution"]["child_cap_eff_hex"] = json!("0000000000200000");
         assert!(
             policy(&r)
                 .iter()
                 .any(|v| v["code"] == "h0.1s-retained-setup-capabilities")
+        );
+    }
+
+    #[test]
+    fn forbidden_preparation_is_a_policy_failure() {
+        let mut r = base("A1", Some("s"), true, true);
+        r["forbidden_preparation"] =
+            json!([{"kind": "sysctl", "description": "disabled userns restriction"}]);
+        assert!(
+            policy(&r)
+                .iter()
+                .any(|v| v["code"] == "forbidden-preparation")
         );
     }
 }

@@ -20,10 +20,13 @@ pub struct SecurityState {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct AppArmorState {
     pub parser_version: String,
-    pub abi: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub abi: Option<String>,
     pub restriction_sysctl: Option<i32>,
     pub loaded_profiles: Vec<LoadedProfile>,
-    pub loaded_policy_sha256: String,
+    /// Observational digest over the loaded profile state (sorted
+    /// `name (mode)` lines + parser version), NOT a kernel-policy hash.
+    pub loaded_profile_state_sha256: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -78,8 +81,8 @@ pub fn collect_host() -> HostFacts {
 /// is recorded honestly ("unknown"/None) so the record always represents what
 /// was observable.
 pub fn collect_security_state() -> SecurityState {
-    let lsm_raw = read_first_line("/sys/kernel/security/lsm").unwrap_or_default();
-    let lsm = classify_lsm(&lsm_raw);
+    let lsm_raw = read_first_line("/sys/kernel/security/lsm");
+    let lsm = classify_lsm(lsm_raw.as_deref());
     let apparmor = (lsm == "apparmor").then(collect_apparmor);
     let selinux = (lsm == "selinux").then(collect_selinux);
     SecurityState {
@@ -89,41 +92,41 @@ pub fn collect_security_state() -> SecurityState {
     }
 }
 
-pub fn classify_lsm(raw: &str) -> String {
-    if raw.contains("apparmor") {
-        "apparmor"
-    } else if raw.contains("selinux") {
-        "selinux"
-    } else if raw.trim().is_empty()
-        || raw
-            .split(',')
-            .all(|part| matches!(part.trim(), "" | "capability" | "yama"))
-    {
-        "none"
-    } else {
-        "other"
+pub fn classify_lsm(raw: Option<&str>) -> String {
+    match raw {
+        None => "other",
+        Some("") => "none",
+        Some(text) if text.contains("apparmor") => "apparmor",
+        Some(text) if text.contains("selinux") => "selinux",
+        Some(text)
+            if text
+                .split(',')
+                .all(|part| matches!(part.trim(), "" | "capability" | "yama")) =>
+        {
+            "none"
+        }
+        Some(_) => "other",
     }
     .to_owned()
 }
 
 fn collect_apparmor() -> AppArmorState {
     let profiles = read_apparmor_profiles();
+    let mut lines: Vec<String> = profiles
+        .iter()
+        .map(|profile| format!("{} ({})", profile.name, profile.mode))
+        .collect();
+    lines.sort_unstable();
     let mut hasher = Sha256::new();
-    hasher.update(
-        profiles
-            .iter()
-            .map(|profile| profile.name.as_str())
-            .collect::<Vec<_>>()
-            .join("\n"),
-    );
+    hasher.update(lines.join("\n"));
     hasher.update(parser_version());
-    let loaded_policy_sha256 = hex::encode(hasher.finalize());
+    let loaded_profile_state_sha256 = hex::encode(hasher.finalize());
     AppArmorState {
         parser_version: parser_version(),
-        abi: "unknown".to_owned(),
+        abi: None,
         restriction_sysctl: read_int("/proc/sys/kernel/apparmor_restrict_unprivileged_userns"),
         loaded_profiles: profiles,
-        loaded_policy_sha256,
+        loaded_profile_state_sha256,
     }
 }
 
@@ -150,10 +153,11 @@ fn read_apparmor_profiles() -> Vec<LoadedProfile> {
             .unwrap_or_else(|| (line.to_owned(), "unknown".to_owned()));
         profiles.push(LoadedProfile {
             name,
-            mode: if mode == "enforce" {
-                "enforce"
-            } else {
-                "complain"
+            mode: match mode.as_str() {
+                "enforce" => "enforce",
+                "complain" => "complain",
+                "unconfined" => "unconfined",
+                _ => "other",
             }
             .to_owned(),
             path: None,
@@ -239,12 +243,14 @@ mod tests {
 
     #[test]
     fn classifies_lsm_names() {
-        assert_eq!(classify_lsm("apparmor"), "apparmor");
-        assert_eq!(classify_lsm("capability,apparmor"), "apparmor");
-        assert_eq!(classify_lsm("selinux"), "selinux");
-        assert_eq!(classify_lsm("capability,yama"), "none");
-        assert_eq!(classify_lsm(""), "none");
-        assert_eq!(classify_lsm("landlock"), "other");
+        assert_eq!(classify_lsm(Some("apparmor")), "apparmor");
+        assert_eq!(classify_lsm(Some("capability,apparmor")), "apparmor");
+        assert_eq!(classify_lsm(Some("selinux")), "selinux");
+        assert_eq!(classify_lsm(Some("capability,yama")), "none");
+        assert_eq!(classify_lsm(Some("")), "none");
+        assert_eq!(classify_lsm(Some("landlock")), "other");
+        // unreadable is NOT none
+        assert_eq!(classify_lsm(None), "other");
     }
 
     #[test]

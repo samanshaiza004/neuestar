@@ -5,7 +5,6 @@
 use anyhow::Result;
 use serde_json::{Value, json};
 
-use crate::child::ChildEvidence;
 use crate::host::{HostFacts, SecurityState};
 
 pub const H0_SCHEMA: &str = "neuestar.h0/v1";
@@ -35,7 +34,7 @@ pub fn build(
     config_surface: &str,
     helper_started: bool,
     child_reached: bool,
-    child_evidence: Option<&ChildEvidence>,
+    child_ns: Option<(&str, &str)>,
     process_stderr: Option<&str>,
     pre_host_state: &str,
     post_host_state: &str,
@@ -62,14 +61,12 @@ pub fn build(
             "helper_started": helper_started,
             "child_reached": child_reached,
         });
-        if let Some(evidence) = child_evidence {
-            value["child_profile_label"] = json!(evidence.profile_label);
-            let mask = crate::capabilities::parse_cap_eff_hex(&evidence.cap_eff_hex).unwrap_or(0);
-            value["child_effective_capabilities"] =
-                json!(crate::capabilities::decode_cap_mask(mask));
-            value["child_cap_eff_hex"] = json!(evidence.cap_eff_hex);
-            value["child_user_namespace_id"] = json!(evidence.user_namespace);
-            value["child_mount_namespace_id"] = json!(evidence.mount_namespace);
+        // The H0.P outcome child's namespace identities come from the frozen
+        // child result. CapEff/profile evidence is H0.1S-only (dedicated
+        // security-evidence invocation) and is added there with strict parsing.
+        if let Some((user_ns, mount_ns)) = child_ns {
+            value["child_user_namespace_id"] = json!(user_ns);
+            value["child_mount_namespace_id"] = json!(mount_ns);
         }
         value
     };

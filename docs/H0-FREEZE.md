@@ -46,3 +46,23 @@ L0 and never changes any Campaign 002 statement.
    controlled-root success).
 4. Candidate A1 (stable root-owned Neuestar-controlled bwrap + Ubuntu AppArmor
    integration), then H0.1S adversarial checks, then the H0 PREFLIGHT matrix.
+
+## Apparatus revision (pre-H0.P, schema-only; frozen policy untouched)
+
+- **H0.P is a single outcome run.** The frozen Campaign 002 child runs under
+  the exact frozen containment command (shared verbatim via
+  `crates/neuestar-probe-core`, including the cleared outer environment and
+  the full Campaign identity variables) with Campaign 002's success predicate
+  (helper exit + user/mount namespace change vs the probe parent + controlled
+  libc) and no display/GPU preflight. The dedicated security-evidence
+  invocation (CapEff raw+decoded, profile labels) is reserved for H0.1S and is
+  structurally required only when `gates.h0_1s` is evaluated — never for H0.P
+  (schema revision in `schema/h0.schema.json`).
+- **AppArmor evidence honesty**: `abi` is recorded only when observable
+  (optional in schema); `loaded_profile_state_sha256` is an observational
+  digest over the sorted `name (mode)` profile list plus parser version — it
+  is explicitly NOT a kernel-policy hash. Unreadable LSM state classifies as
+  `other`, never `none`. Profile modes are preserved only when identifiable
+  (enforce/complain/unconfined; otherwise `other`).
+- **Checker**: `forbidden_preparation != []` is a policy failure; H0.1S pass
+  requires raw CapEff == 0 and an empty decoded set.
