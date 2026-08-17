@@ -3,7 +3,8 @@
 Updated 2026-08-16. This file distinguishes implementation checks from physical
 Gate L0 evidence. Full-VM lab evidence: [docs/full-vm-lab.md](docs/full-vm-lab.md);
 Campaign 001 apparatus-failure verdict: [docs/CAMPAIGN-001-VERDICT.md](docs/CAMPAIGN-001-VERDICT.md);
-Campaign 002 frozen specimen + outcome: [docs/CAMPAIGN-002.md](docs/CAMPAIGN-002.md).
+Campaign 002 frozen specimen + outcome: [docs/CAMPAIGN-002.md](docs/CAMPAIGN-002.md);
+H0 PREFLIGHT (H0.P apparatus equivalence): [docs/H0-PREFLIGHT.md](docs/H0-PREFLIGHT.md).
 
 ## Implemented
 

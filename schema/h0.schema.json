@@ -122,10 +122,9 @@
           "additionalProperties": false,
           "required": [
             "parser_version",
-            "abi",
             "restriction_sysctl",
             "loaded_profiles",
-            "loaded_policy_sha256"
+            "loaded_profile_state_sha256"
           ],
           "properties": {
             "parser_version": {
@@ -134,6 +133,7 @@
               "maxLength": 128
             },
             "abi": {
+              "description": "AppArmor ABI, recorded only when observable; omitted otherwise.",
               "type": "string",
               "minLength": 1,
               "maxLength": 128
@@ -156,7 +156,7 @@
                   },
                   "mode": {
                     "type": "string",
-                    "enum": ["enforce", "complain", "unconfined"]
+                    "enum": ["enforce", "complain", "unconfined", "other"]
                   },
                   "path": {
                     "type": "string",
@@ -165,7 +165,8 @@
                 }
               }
             },
-            "loaded_policy_sha256": {
+            "loaded_profile_state_sha256": {
+              "description": "Observational digest over the loaded profile state (sorted `name (mode)` lines + parser version), NOT a kernel-policy hash.",
               "type": "string",
               "pattern": "^[0-9a-f]{64}$"
             }
@@ -451,7 +452,7 @@
       }
     },
     "execution": {
-      "description": "Launch-state evidence. Full child evidence is structurally required only when child_reached=true or gates.h0_1s=pass; an attempt that fails before a child exists (e.g., helper dies during uid-map setup) must remain representable.",
+      "description": "Launch-state evidence. H0.P records only the outcome run (helper_started, child_reached, and, when the frozen child was reached, its namespace identities). The dedicated security-evidence fields (CapEff raw+decoded, profile labels) are H0.1S-only and structurally required only when gates.h0_1s is evaluated; early failures before a child exists must remain representable.",
       "type": "object",
       "additionalProperties": false,
       "required": ["helper_started", "child_reached"],
@@ -504,8 +505,8 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "containment_argv": {
+          "description": "The executed (or intended) containment argv. Empty is representable only when the helper never started and no command was constructed (apparatus failure before command construction); when helper_started=true it must be non-empty.",
           "type": "array",
-          "minItems": 1,
           "maxItems": 128,
           "items": {
             "type": "string",
@@ -722,13 +723,30 @@
       }
     },
     {
-      "description": "Full child evidence is required when the child was reached or H0.1S passed; early failures before a child exists remain representable with only helper_started/child_reached.",
-      "if": {
-        "anyOf": [
-          { "properties": { "execution": { "properties": { "child_reached": { "const": true } } } } },
-          { "properties": { "gates": { "properties": { "h0_1s": { "const": "pass" } } } } }
-        ]
-      },
+      "description": "Once the helper started, the containment argv must be non-empty (a constructed command exists).",
+      "if": { "properties": { "execution": { "properties": { "helper_started": { "const": true } } } } },
+      "then": {
+        "properties": {
+          "apparatus": {
+            "properties": { "containment_argv": { "minItems": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "description": "H0.P: when the outcome child was reached, its namespace identities are required (from the frozen child result).",
+      "if": { "properties": { "execution": { "properties": { "child_reached": { "const": true } } } } },
+      "then": {
+        "properties": {
+          "execution": {
+            "required": ["child_user_namespace_id", "child_mount_namespace_id"]
+          }
+        }
+      }
+    },
+    {
+      "description": "H0.1S: the dedicated security-evidence invocation (CapEff raw+decoded, profile labels) is required only when H0.1S is evaluated, never for H0.P.",
+      "if": { "properties": { "gates": { "properties": { "h0_1s": { "not": { "const": "not-run" } } } } } },
       "then": {
         "properties": {
           "execution": {
