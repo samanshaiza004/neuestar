@@ -381,6 +381,11 @@ mod tests {
             json!([])
         };
         let sha = integration_shas.map_or(Value::Null, |_| json!(S));
+        let source_sha: Value = if integration_shas.is_some() {
+            json!("b".repeat(40))
+        } else {
+            Value::Null
+        };
         json!({
             "schema": "neuestar.h0/v1",
             "attempt": {"timestamp": "2026-08-16T23:00:00Z", "phase": "h0-preflight", "integration_source_changed_since_previous": false},
@@ -390,7 +395,8 @@ mod tests {
                  "loaded_profiles": [{"name": "neuestar-host", "mode": "enforce"}], "loaded_profile_state_sha256": S}},
             "candidate": candidate,
             "integration": {"integration_identity_sha256": S, "neuestar_integration_package_sha256": sha,
-                            "integration_source_sha256": sha, "security_policy_sha256": sha},
+                            "integration_source_sha256": source_sha,
+                            "security_policy_sha256": sha},
             "trusted_helper": if trusted {
                 json!({"canonical_path": "/usr/libexec/neuestar/bwrap", "sha256": S, "uid": 0, "gid": 0, "mode": 493, "parent_mount_writable_by_test_user": false})
             } else {
