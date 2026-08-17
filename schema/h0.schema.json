@@ -505,8 +505,8 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "containment_argv": {
+          "description": "The executed (or intended) containment argv. Empty is representable only when the helper never started and no command was constructed (apparatus failure before command construction); when helper_started=true it must be non-empty.",
           "type": "array",
-          "minItems": 1,
           "maxItems": 128,
           "items": {
             "type": "string",
@@ -718,6 +718,17 @@
               "carried_components": { "maxItems": 0 },
               "helper_loc": { "const": 0 }
             }
+          }
+        }
+      }
+    },
+    {
+      "description": "Once the helper started, the containment argv must be non-empty (a constructed command exists).",
+      "if": { "properties": { "execution": { "properties": { "helper_started": { "const": true } } } } },
+      "then": {
+        "properties": {
+          "apparatus": {
+            "properties": { "containment_argv": { "minItems": 1 } }
           }
         }
       }

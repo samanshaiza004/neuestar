@@ -10,13 +10,16 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, ValueEnum};
 use neuestar_host_inspect::HostMetadata;
 use neuestar_probe_core::artifact::{ArtifactMetadata, valid_sha256};
+use neuestar_probe_core::child_result::{
+    ChildResult, namespace_changed, read_child_result, valid_successful_child_result,
+};
 use neuestar_report::{
     Artifact, CaptureEvidence, Classification, ContainmentEvidence, ContainmentSubstage,
     DisplayServer, Distro, FailureStage, GateResults, GateState, GpuVendor, GraphicsEvidence,
     LibcSource, MatrixCell, ObservedHost, PresentationEvidence, RendererKind, Report,
     RuntimeEvidence, SchemaVersion, StructuredFailure, VendorSpecificRule,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 const EXIT_VERIFY: u8 = 65;
 const EXIT_UNAVAILABLE: u8 = 69;
@@ -77,24 +80,6 @@ enum CliGpu {
 enum CliDisplay {
     Wayland,
     X11,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChildResult {
-    schema: String,
-    contained: bool,
-    launch_reached_main: bool,
-    architecture: String,
-    user_namespace: String,
-    mount_namespace: String,
-    mapped_libc_paths: Vec<String>,
-    failure: Option<ChildFailure>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChildFailure {
-    code: String,
-    explanation: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -246,6 +231,13 @@ fn validated_archive_hash<'a>(
             Ok(None)
         }
     }
+}
+
+fn namespace_identity(path: &str) -> String {
+    fs::read_link(path).map_or_else(
+        |_| "unavailable".to_owned(),
+        |identity| identity.display().to_string(),
+    )
 }
 
 fn execute_contained(
@@ -686,58 +678,6 @@ fn failure_code(stage: FailureStage) -> &'static str {
 
 fn bounded_message(message: &str) -> String {
     message.chars().take(2048).collect()
-}
-
-fn read_child_result(path: &Path) -> Result<ChildResult> {
-    let metadata =
-        fs::metadata(path).with_context(|| format!("child did not produce {}", path.display()))?;
-    if metadata.len() > 1024 * 1024 {
-        bail!("child result exceeds 1 MiB");
-    }
-    let result: ChildResult =
-        serde_json::from_reader(File::open(path)?).context("child result is malformed")?;
-    if result.schema != "neuestar.child/v1"
-        || result.architecture.is_empty()
-        || result.architecture.len() > 32
-        || result.user_namespace.len() > 128
-        || result.mount_namespace.len() > 128
-        || result.mapped_libc_paths.len() > 16
-        || result
-            .mapped_libc_paths
-            .iter()
-            .any(|path| path.len() > 1024 || !path.starts_with('/'))
-    {
-        bail!("child result violates its bounded schema");
-    }
-    Ok(result)
-}
-
-fn valid_successful_child_result(
-    result: &ChildResult,
-    parent_user_namespace: &str,
-    parent_mount_namespace: &str,
-) -> bool {
-    result.contained
-        && result.launch_reached_main
-        && result.architecture == "x86_64"
-        && namespace_changed(&result.user_namespace, parent_user_namespace, "user:")
-        && namespace_changed(&result.mount_namespace, parent_mount_namespace, "mnt:")
-        && result.failure.is_none()
-        && result
-            .mapped_libc_paths
-            .iter()
-            .any(|path| path.contains("libc.so"))
-}
-
-fn namespace_identity(path: &str) -> String {
-    fs::read_link(path).map_or_else(
-        |_| "unavailable".to_owned(),
-        |identity| identity.display().to_string(),
-    )
-}
-
-fn namespace_changed(child: &str, parent: &str, prefix: &str) -> bool {
-    child.starts_with(prefix) && parent.starts_with(prefix) && child != parent
 }
 
 fn child_failure_detail(status: ExitStatus, result: Option<&ChildResult>) -> String {

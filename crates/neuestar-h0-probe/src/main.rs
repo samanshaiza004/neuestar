@@ -17,6 +17,9 @@ use neuestar_h0_probe::containment::{ContainmentError, run_contained};
 use neuestar_h0_probe::host::{collect_host, collect_security_state};
 use neuestar_h0_probe::record::{Outcome, build};
 use neuestar_probe_core::artifact;
+use neuestar_probe_core::child_result::{
+    ChildResult, read_child_result, valid_successful_child_result,
+};
 use neuestar_probe_core::command::{contained_command, frozen_child_exec};
 
 const EXIT_OK: u8 = 0;
@@ -78,6 +81,23 @@ fn run(cli: &Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
+    // Canonicalize the artifact root once: relative-path/current-directory
+    // behavior must not be an apparatus variable.
+    let artifact_root = cli.artifact_root.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve artifact root {}",
+            cli.artifact_root.display()
+        )
+    })?;
+    // Validate the recorded identities so an apparatus record can never be
+    // schema-invalid evidence.
+    if !neuestar_probe_core::artifact::valid_sha256(&cli.archive_sha256) {
+        anyhow::bail!("--archive-sha256 must be 64 lowercase hexadecimal characters");
+    }
+    if !valid_iso_date(&cli.iso_snapshot_date) {
+        anyhow::bail!("--iso-snapshot-date must be YYYY-MM-DD");
+    }
+
     let report_parent = prepare_report_parent(&cli.report)?;
     let host = collect_host();
     let security_state = collect_security_state();
@@ -89,7 +109,7 @@ fn run(cli: &Cli) -> Result<u8> {
     // Full frozen artifact preflight (identical to Campaign 002), executed
     // before anything else so a divergence can never be blamed on a weaker
     // verifier. Verification failure is an apparatus-stage failure record.
-    let metadata = match artifact::verify_payload(&cli.artifact_root) {
+    let metadata = match artifact::verify_payload(&artifact_root) {
         Ok(metadata) => metadata,
         Err(error) => {
             write_apparatus_failure(
@@ -101,6 +121,8 @@ fn run(cli: &Cli) -> Result<u8> {
                 &report_parent,
                 "artifact-verification",
                 &format!("{error:#}"),
+                false,
+                &[],
                 &parent_user_ns,
                 &parent_mount_ns,
             )?;
@@ -111,7 +133,7 @@ fn run(cli: &Cli) -> Result<u8> {
     // Bundled-helper closure preflight (identical to Campaign 002): the
     // bundled loader must resolve bwrap only inside the controlled artifact.
     if let Err(error) =
-        neuestar_probe_core::helper::verify_bundled_helper_resolution(&cli.artifact_root)
+        neuestar_probe_core::helper::verify_bundled_helper_resolution(&artifact_root)
     {
         write_apparatus_failure(
             cli,
@@ -122,6 +144,8 @@ fn run(cli: &Cli) -> Result<u8> {
             &report_parent,
             "helper-closure-verification",
             &format!("{error:#}"),
+            false,
+            &[],
             &parent_user_ns,
             &parent_mount_ns,
         )?;
@@ -142,6 +166,8 @@ fn run(cli: &Cli) -> Result<u8> {
             &report_parent,
             "stale-evidence",
             "evidence directory already contains child-result.json or h0-child-evidence.json; use a fresh evidence directory",
+            false,
+            &[],
             &parent_user_ns,
             &parent_mount_ns,
         )?;
@@ -151,7 +177,7 @@ fn run(cli: &Cli) -> Result<u8> {
     let probe_sha256 = sha256_self();
     let mut command = contained_command(
         &report_parent,
-        &cli.artifact_root,
+        &artifact_root,
         &cli.archive_sha256,
         &metadata,
         &frozen_child_exec(),
@@ -179,6 +205,8 @@ fn run(cli: &Cli) -> Result<u8> {
                 &report_parent,
                 "helper-spawn-failed",
                 &format!("{error:#}"),
+                false,
+                &argv,
                 &parent_user_ns,
                 &parent_mount_ns,
             )?;
@@ -194,6 +222,8 @@ fn run(cli: &Cli) -> Result<u8> {
                 &report_parent,
                 "helper-wait-failed",
                 &format!("{error:#}"),
+                true,
+                &argv,
                 &parent_user_ns,
                 &parent_mount_ns,
             )?;
@@ -206,7 +236,7 @@ fn run(cli: &Cli) -> Result<u8> {
     // Campaign 002 success predicate: helper success, valid bounded child
     // result, x86_64, user AND mount namespace change vs the probe parent,
     // no child failure, controlled libc observed.
-    let child_result = read_child_result(&child_result_path);
+    let child_result = read_child_result(&child_result_path).ok();
     let success = run.status == Some(0)
         && child_result.as_ref().is_some_and(|result| {
             valid_successful_child_result(result, &parent_user_ns, &parent_mount_ns)
@@ -215,8 +245,7 @@ fn run(cli: &Cli) -> Result<u8> {
     let outcome = if success {
         Outcome::Pass
     } else {
-        Outcome::Fail {
-            stage: "baseline",
+        Outcome::BaselineFail {
             code: match &child_result {
                 Some(result) if result.contained && result.launch_reached_main => "child-failed",
                 _ => "child-unreached",
@@ -302,6 +331,8 @@ fn write_apparatus_failure(
     report_parent: &std::path::Path,
     code: &'static str,
     message: &str,
+    helper_started: bool,
+    argv: &[String],
     parent_user_ns: &str,
     parent_mount_ns: &str,
 ) -> Result<()> {
@@ -313,10 +344,10 @@ fn write_apparatus_failure(
         &cli.archive_sha256,
         "unverified",
         &sha256_self(),
-        &[],
+        argv,
         &cli.iso_snapshot_date,
         &cli.config_surface,
-        false,
+        helper_started,
         false,
         None,
         None,
@@ -326,115 +357,12 @@ fn write_apparatus_failure(
             report_parent.display()
         ),
         &format!("probe_parent_user_ns={parent_user_ns}\nprobe_parent_mount_ns={parent_mount_ns}"),
-        &Outcome::Fail {
-            stage: "apparatus",
+        &Outcome::ApparatusFail {
             code,
             message: message.to_owned(),
         },
     )?;
     write_json(&cli.report, &record)
-}
-
-#[derive(Debug)]
-struct ChildResult {
-    contained: bool,
-    launch_reached_main: bool,
-    architecture: String,
-    user_namespace: String,
-    mount_namespace: String,
-    mapped_libc_paths: Vec<String>,
-    failure: Option<ChildFailure>,
-}
-
-#[derive(Debug)]
-struct ChildFailure {
-    code: String,
-    explanation: String,
-}
-
-fn read_child_result(path: &std::path::Path) -> Option<ChildResult> {
-    let metadata = std::fs::metadata(path).ok()?;
-    if metadata.len() > 1024 * 1024 {
-        return None;
-    }
-    let value: serde_json::Value = serde_json::from_reader(std::fs::File::open(path).ok()?).ok()?;
-    if value.get("schema")?.as_str()? != "neuestar.child/v1" {
-        return None;
-    }
-    Some(ChildResult {
-        contained: value
-            .get("contained")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
-        launch_reached_main: value
-            .get("launch_reached_main")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
-        architecture: value
-            .get("architecture")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_owned(),
-        user_namespace: value
-            .get("user_namespace")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_owned(),
-        mount_namespace: value
-            .get("mount_namespace")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_owned(),
-        mapped_libc_paths: value
-            .get("mapped_libc_paths")
-            .and_then(serde_json::Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(serde_json::Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default(),
-        failure: value
-            .get("failure")
-            .and_then(serde_json::Value::as_object)
-            .map(|failure| ChildFailure {
-                code: failure
-                    .get("code")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("")
-                    .to_owned(),
-                explanation: failure
-                    .get("explanation")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("")
-                    .to_owned(),
-            }),
-    })
-}
-
-/// The exact Campaign 002 success predicate, with the probe's own parent
-/// namespaces as the baseline.
-fn valid_successful_child_result(
-    result: &ChildResult,
-    parent_user_ns: &str,
-    parent_mount_ns: &str,
-) -> bool {
-    result.contained
-        && result.launch_reached_main
-        && result.architecture == "x86_64"
-        && namespace_changed(&result.user_namespace, parent_user_ns, "user:")
-        && namespace_changed(&result.mount_namespace, parent_mount_ns, "mnt:")
-        && result.failure.is_none()
-        && result
-            .mapped_libc_paths
-            .iter()
-            .any(|path| path.contains("libc.so"))
-}
-
-fn namespace_changed(child: &str, parent: &str, prefix: &str) -> bool {
-    child.starts_with(prefix) && parent.starts_with(prefix) && child != parent
 }
 
 fn child_failure_message(result: &ChildResult, status: Option<i32>) -> String {
@@ -446,6 +374,14 @@ fn child_failure_message(result: &ChildResult, status: Option<i32>) -> String {
             result.contained, result.launch_reached_main, result.architecture, status
         )
     }
+}
+
+fn valid_iso_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && (0..10).all(|i| i == 4 || i == 7 || bytes[i].is_ascii_digit())
 }
 
 fn namespace_identity(path: &str) -> String {

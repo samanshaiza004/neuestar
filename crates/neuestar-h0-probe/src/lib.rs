@@ -5,7 +5,6 @@
 //! display/GPU/campaign-preflight semantics with the Campaign 002 launcher;
 //! the only shared shape is the minimum user+mount containment argv.
 
-pub mod capabilities;
 pub mod child;
 pub mod containment;
 pub mod host;

@@ -28,7 +28,7 @@ pub fn run_child_mode(result_path: &Path) -> Result<()> {
         schema: "neuestar.h0-child/v1".to_owned(),
         user_namespace: namespace_identity("/proc/self/ns/user"),
         mount_namespace: namespace_identity("/proc/self/ns/mnt"),
-        cap_eff_hex: crate::capabilities::self_cap_eff_hex()
+        cap_eff_hex: neuestar_probe_core::capabilities::self_cap_eff_hex()
             .unwrap_or_else(|| "unavailable".to_owned()),
         profile_label: fs::read_to_string("/proc/self/attr/current")
             .unwrap_or_else(|_| "unknown".to_owned())

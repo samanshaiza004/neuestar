@@ -270,17 +270,31 @@ fn check_policy(record: &Value, violations: &mut Vec<Value>) {
     // H0.1S: a passing security-preservation gate requires the child to
     // retain no setup capabilities (empty CapEff, in its namespace context).
     if record["gates"]["h0_1s"].as_str() == Some("pass") {
-        let caps = record["execution"]["child_effective_capabilities"]
-            .as_array()
-            .map_or(0, Vec::len);
+        let caps_array = record["execution"]["child_effective_capabilities"].as_array();
+        let caps = caps_array.map_or(0, Vec::len);
         let raw = record["execution"]["child_cap_eff_hex"]
             .as_str()
             .unwrap_or("");
-        if caps != 0 {
+        // Raw mask must be numerically zero, decoded set must be empty, and
+        // the decoded set must agree with the raw mask (apparatus consistency).
+        let raw_zero = neuestar_probe_core::capabilities::parse_cap_eff_hex(raw) == Some(0);
+        let decoded = neuestar_probe_core::capabilities::decode_cap_mask(
+            neuestar_probe_core::capabilities::parse_cap_eff_hex(raw).unwrap_or(u64::MAX),
+        );
+        let recorded: Vec<String> = caps_array
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect();
+        let agrees = decoded == recorded;
+        if !raw_zero || caps != 0 || !agrees {
             violations.push(json!({
                 "stage": "security-preservation",
                 "code": "h0.1s-retained-setup-capabilities",
-                "message": format!("H0.1S pass with retained capabilities: {raw} ({caps} set)"),
+                "message": format!(
+                    "H0.1S pass with retained or inconsistent capabilities: raw={raw} decoded={decoded:?} recorded={recorded:?}"
+                ),
             }));
         }
     }
@@ -589,6 +603,103 @@ mod tests {
         add_security_evidence(&mut r);
         r["execution"]["child_effective_capabilities"] = json!(["CAP_SYS_ADMIN"]);
         r["execution"]["child_cap_eff_hex"] = json!("0000000000200000");
+        assert!(
+            policy(&r)
+                .iter()
+                .any(|v| v["code"] == "h0.1s-retained-setup-capabilities")
+        );
+    }
+
+    #[test]
+    fn apparatus_failure_records_are_schema_valid_and_gate_truthful() {
+        // artifact-verification: no command constructed -> [] argv allowed,
+        // helper_started=false, h0_0 = not-run
+        let mut r = base("none", None, false, false);
+        r["execution"] = json!({"helper_started": false, "child_reached": false});
+        r["apparatus"] = json!({"probe_sha256": S, "containment_argv": []});
+        r["classification"] = json!("fail");
+        r["failure"] =
+            json!({"stage": "apparatus", "code": "artifact-verification", "message": "x"});
+        r["gates"]["h0_0"] = json!("not-run");
+        assert!(
+            validate(&r).0,
+            "pre-command apparatus record with [] argv must be schema-valid"
+        );
+        assert!(
+            policy(&r).is_empty(),
+            "apparatus record must not trip policy"
+        );
+        assert_eq!(
+            r["gates"]["h0_0"],
+            json!("not-run"),
+            "apparatus failure must not claim H0.0 ran"
+        );
+
+        // spawn failure: helper_started=false, command WAS constructed -> argv recorded
+        let mut r = base("none", None, false, false);
+        r["execution"] = json!({"helper_started": false, "child_reached": false});
+        r["apparatus"] =
+            json!({"probe_sha256": S, "containment_argv": ["ld-linux", "--inhibit-cache"]});
+        r["classification"] = json!("fail");
+        r["failure"] = json!({"stage": "apparatus", "code": "helper-spawn-failed", "message": "x"});
+        r["gates"]["h0_0"] = json!("not-run");
+        assert!(
+            validate(&r).0,
+            "spawn-failure record with recorded argv must be schema-valid"
+        );
+
+        // wait failure: helper_started=true -> argv REQUIRED non-empty
+        let mut r = base("none", None, false, false);
+        r["execution"] = json!({"helper_started": true, "child_reached": false});
+        r["apparatus"] =
+            json!({"probe_sha256": S, "containment_argv": ["ld-linux", "--inhibit-cache"]});
+        r["classification"] = json!("fail");
+        r["failure"] = json!({"stage": "apparatus", "code": "helper-wait-failed", "message": "x"});
+        r["gates"]["h0_0"] = json!("not-run");
+        assert!(
+            validate(&r).0,
+            "wait-failure record (helper_started=true) must be schema-valid"
+        );
+        let mut r = base("none", None, false, false);
+        r["execution"] = json!({"helper_started": true, "child_reached": false});
+        r["apparatus"] = json!({"probe_sha256": S, "containment_argv": []});
+        assert!(
+            !validate(&r).0,
+            "helper_started=true requires non-empty argv"
+        );
+
+        // baseline uid-map failure -> h0_0 = fail
+        let mut b = base("none", None, false, false);
+        b["execution"] = json!({"helper_started": true, "child_reached": false});
+        b["apparatus"] =
+            json!({"probe_sha256": S, "containment_argv": ["bwrap", "--unshare-user"]});
+        b["classification"] = json!("fail");
+        b["failure"] = json!({"stage": "baseline", "code": "child-unreached", "message": "bwrap: setting up uid map: Permission denied"});
+        b["gates"]["h0_0"] = json!("fail");
+        assert!(validate(&b).0);
+        assert_eq!(
+            b["gates"]["h0_0"],
+            json!("fail"),
+            "baseline failure must record H0.0 as fail"
+        );
+    }
+
+    #[test]
+    fn h01s_raw_cap_eff_must_be_numerically_zero() {
+        // raw = 1 (CAP_CHOWN) with decoded [] -> must FAIL (raw is the truth)
+        let mut r = base("A1", Some("s"), true, true);
+        add_security_evidence(&mut r);
+        r["execution"]["child_cap_eff_hex"] = json!("1");
+        r["execution"]["child_effective_capabilities"] = json!([]);
+        assert!(
+            policy(&r)
+                .iter()
+                .any(|v| v["code"] == "h0.1s-retained-setup-capabilities")
+        );
+        // raw = 0 with decoded [CAP_CHOWN] -> must FAIL (raw/decoded agreement)
+        let mut r = base("A1", Some("s"), true, true);
+        add_security_evidence(&mut r);
+        r["execution"]["child_effective_capabilities"] = json!(["CAP_CHOWN"]);
         assert!(
             policy(&r)
                 .iter()

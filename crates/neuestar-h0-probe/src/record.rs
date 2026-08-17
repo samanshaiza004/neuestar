@@ -13,8 +13,13 @@ pub const H0_SCHEMA: &str = "neuestar.h0/v1";
 #[derive(Debug, Clone)]
 pub enum Outcome {
     Pass,
-    Fail {
-        stage: &'static str,
+    /// The frozen child ran under the minimum boundary and failed; H0.0 = fail.
+    BaselineFail {
+        code: &'static str,
+        message: String,
+    },
+    /// The apparatus failed before or around containment; H0.0 = not-run.
+    ApparatusFail {
         code: &'static str,
         message: String,
     },
@@ -42,14 +47,18 @@ pub fn build(
 ) -> Result<Value> {
     let (classification, failure) = match outcome {
         Outcome::Pass => ("pass", None),
-        Outcome::Fail {
-            stage,
-            code,
-            message,
-        } => (
+        Outcome::BaselineFail { code, message } => (
             "fail",
             Some(json!({
-                "stage": stage,
+                "stage": "baseline",
+                "code": code,
+                "message": bounded(message, 2048),
+            })),
+        ),
+        Outcome::ApparatusFail { code, message } => (
+            "fail",
+            Some(json!({
+                "stage": "apparatus",
                 "code": code,
                 "message": bounded(message, 2048),
             })),
@@ -73,7 +82,8 @@ pub fn build(
 
     let h0_0 = match outcome {
         Outcome::Pass => "pass",
-        Outcome::Fail { .. } => "fail",
+        Outcome::BaselineFail { .. } => "fail",
+        Outcome::ApparatusFail { .. } => "not-run",
     };
 
     let mut record = json!({

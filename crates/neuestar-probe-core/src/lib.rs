@@ -4,5 +4,7 @@
 //! command construction.
 
 pub mod artifact;
+pub mod capabilities;
+pub mod child_result;
 pub mod command;
 pub mod helper;

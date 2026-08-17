@@ -66,3 +66,15 @@ L0 and never changes any Campaign 002 statement.
   (enforce/complain/unconfined; otherwise `other`).
 - **Checker**: `forbidden_preparation != []` is a policy failure; H0.1S pass
   requires raw CapEff == 0 and an empty decoded set.
+
+- **Gate truthfulness**: apparatus failures (pre-command or around containment)
+  record `h0_0 = not-run`, never `fail`; only a baseline failure (the frozen
+  child actually ran under the boundary and failed) records `h0_0 = fail`.
+  `containment_argv` may be `[]` only before a command was constructed;
+  `helper_started=true` requires a non-empty argv. Wait failure records
+  `helper_started=true`.
+- **Shared child parser**: the bounded Campaign 002 child-result parser and
+  the exact success predicate live in `neuestar-probe-core::child_result` and
+  are consumed verbatim by both the frozen launcher and the H0 probe.
+- **H0.1S raw mask**: pass requires raw CapEff numerically zero, an empty
+  decoded set, and raw/decoded agreement (apparatus consistency).
