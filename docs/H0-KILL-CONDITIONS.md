@@ -1,7 +1,8 @@
 # H0 — Precommitted Kill Conditions (Installed Substrate)
 
-Status: **PROPOSAL for review — committed before any H0 implementation or
-testing.** These rules must not be relaxed after observing failures.
+Status: **PROPOSAL, revised per architectural review — committed before any H0
+implementation or testing.** These rules must not be relaxed after observing
+failures.
 
 Installed Substrate dies and Neuestar falls back to Vertical Native if any of
 the following becomes necessary:
@@ -9,7 +10,9 @@ the following becomes necessary:
 1. Per-application AppArmor/SELinux/security policy.
 2. Per-runtime-generation policy.
 3. Per-GPU or per-driver security policy.
-4. Per-machine edits or operator instructions.
+4. Per-machine edits or operator instructions beyond normal install/update/
+   remove of the declared integration package through the distro package
+   manager (invariant D).
 5. Disabling or globally weakening AppArmor/SELinux/userns restrictions.
 6. A setuid helper as a compatibility strategy.
 7. File capabilities as a compatibility strategy.
@@ -19,29 +22,41 @@ the following becomes necessary:
     changes.
 11. A growing distro/security special-case rule table analogous to the L0
     capture-rule failure mode.
-12. Normal distro security-policy churn repeatedly requiring Neuestar policy
-    source edits.
+12. Any ordinary in-release supported security-policy update requiring a
+    Neuestar integration-source change. (Strict reading: "any", not
+    "repeatedly". Cross-major-release adaptation is measured separately under
+    H0.4R / H0.6 and is not in-release churn.)
 13. The integration layer grows enough that Neuestar is effectively
     maintaining a mini Flatpak/Steam Runtime distribution stack rather than a
-    small host adapter.
+    small host adapter (thresholds below).
 14. A failed target is omitted or reclassified after results are known.
 
 ## Thresholds for kill condition 13 (proposed, pending review/freeze)
 
 Ceilings for the whole maintained integration layer across all target distros.
-These are proposals for architectural review and must be frozen before any
-prototype code; they are not chosen silently during testing.
+Definitions are intrinsic and non-gameable:
+
+- root-owned bytes = Neuestar-owned payload bytes installed outside
+  package-manager metadata;
+- file count = Neuestar-owned filesystem entries only;
+- policy LOC = nonblank/noncomment Neuestar-maintained policy source,
+  including local includes;
+- distro branch = a semantically different code/policy path, not packaging
+  boilerplate;
+- helper LOC = first-party helper code only; generated/vendor code excluded
+  (a Neuestar-selected bwrap binary counts zero).
 
 | Metric | Ceiling | Rationale |
 |---|---|---|
-| Root-owned installed bytes | ≤ 8 MiB | Static musl helper ≈ 1–2 MiB + KB of policy; 8 MiB ≈ 1/100 of a Flatpak runtime bundle, ~10× a single helper. Keeps "small adapter" honest. |
-| Installed file count | ≤ 20 | Helper + 1–2 policy profiles + package control files. Flatpak-class installs are hundreds of files. |
-| Policy LOC (all distros) | ≤ 200 | Upstream `bwrap-userns-restrict` (profile + unpriv profile) ≈ 60 lines; one Neuestar profile of the same pattern ≈ ≤ 100; 200 total leaves headroom for a second family. |
-| Distro-specific implementation branches | ≤ 2 | Baseline predicts only the Ubuntu/AppArmor family needs policy; the second branch is budgeted only if Fedora SELinux proves necessary. |
-| Services/daemons | 0 | A static on-demand helper needs no daemon; daemons add perpetual maintenance and attack surface. |
-| External runtime package dependencies | 0 | Every runtime dependency is churn surface; build-time dependencies do not count. |
-| Helper source LOC | ≤ 2 000 | Auditability of the new root-owned trust anchor (bwrap ≈ 5k LOC; a purpose-built userns+mount+exec helper should be far smaller). |
-| Policy churn tolerance | 0 edits per normal distro update | Any required edit is an H0.5 failure (hard gate, not a threshold). |
+| Root-owned installed bytes | ≤ 8 MiB | Generous headroom; definition matters more than the number. |
+| Installed file count (Neuestar-owned) | ≤ 20 | Helper + 1–2 policy profiles + package control files. Flatpak-class installs are hundreds of files. |
+| Policy LOC (all distros) | ≤ 200 | Upstream `bwrap-userns-restrict` ≈ 60 lines; one Neuestar profile ≈ ≤ 100. |
+| Distro-specific implementation branches | ≤ 2 | Baseline predicts only the Ubuntu/AppArmor family needs policy. |
+| Services/daemons | 0 | A static on-demand helper needs no daemon. |
+| Additional required host packages | ≤ 2 | Distro supported repos only; no third-party repos; no exact version pinning; no dependency whose ABI/version forces Neuestar policy changes during ordinary supported updates; all counted. A dependency is not automatically equal maintenance burden to vendored code. |
+| Neuestar-maintained dependencies | 0 | Any dependency we must maintain ourselves is churn surface. |
+| Helper source LOC (first-party) | ≤ 2 000 | Auditability of the root-owned trust anchor if A2 is ever built. |
+| Policy churn tolerance (in-release) | 0 edits per ordinary supported update | Any required edit is H0.5 failure (hard gate, not a threshold). |
 
 ## Rules
 
