@@ -68,10 +68,13 @@ fail + `h0_0=fail` + baseline uid-map failure.
   reproduced, not inferred.
 - NixOS 26.05: **pass** with zero integration.
 
-Remaining per GATE-H0 execution order (not yet run): Fedora 44 and Arch
-(official `linux`) independent zero-integration baselines, Ubuntu 24.04.4
-current-updates baseline, then Candidate A1 (new prototype + H0.1S), A1 vs B,
-and in-release H0.5 churn.
+Remaining per frozen GATE-H0 execution order (not yet run): Candidate A1
+prototype → H0.1S adversarial security checks → Ubuntu 26.04 integrated H0
+PREFLIGHT → NixOS zero-integration control (a fresh run after the A1/Ubuntu
+work, as a drift control — the NixOS H0.P pass establishes its H0.0 baseline
+but does not skip that step) → Fedora 44 → Arch official `linux` → Ubuntu
+24.04 current-updates → A1 vs B → H0.5 churn. Do not run Fedora/Arch before
+A1.
 
 Evidence: [`docs/h0-preflight-evidence/`](h0-preflight-evidence/) (both
 reports, run logs, pre-run states, apparatus identity).
