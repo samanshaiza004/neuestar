@@ -981,11 +981,13 @@ fn build_candidate_evidence(
         })
         .sum();
     let policy_sha = if is_a2 {
-        policy_paths
+        // digest over the sorted individual file hashes (schema shape: 64 hex)
+        let mut hashes = policy_paths
             .iter()
             .map(|path| neuestar_probe_core::artifact::sha256_file(path).unwrap_or_default())
-            .collect::<Vec<_>>()
-            .join("")
+            .collect::<Vec<_>>();
+        hashes.sort();
+        neuestar_h0_probe::record::sha256_hex(&hashes.join(""))
     } else {
         neuestar_probe_core::artifact::sha256_file(&cli.policy_path)?
     };

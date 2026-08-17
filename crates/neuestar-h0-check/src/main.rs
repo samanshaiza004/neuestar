@@ -371,11 +371,16 @@ fn check_policy(record: &Value, violations: &mut Vec<Value>) {
                 }));
             }
             let expected_path = helper["canonical_path"].as_str().unwrap_or("");
+            let trust_profile = if record["candidate"] == "A2" {
+                "neuestar-entry"
+            } else {
+                "neuestar-bwrap"
+            };
             let attachment_ok = record["security_state"]["apparmor"]["loaded_profiles"]
                 .as_array()
                 .is_some_and(|profiles| {
                     profiles.iter().any(|profile| {
-                        profile["name"] == "neuestar-bwrap"
+                        profile["name"] == trust_profile
                             && profile["mode"] == "enforce"
                             && profile["path"].as_str() == Some(expected_path)
                     })
