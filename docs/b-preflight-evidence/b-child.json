@@ -1,0 +1,12 @@
+{
+  "schema": "neuestar.child/v1",
+  "contained": true,
+  "launch_reached_main": true,
+  "architecture": "x86_64",
+  "user_namespace": "user:[4026532502]",
+  "mount_namespace": "mnt:[4026532501]",
+  "mapped_libc_paths": [
+    "/lib/x86_64-linux-gnu/libc.so.6"
+  ],
+  "failure": null
+}
