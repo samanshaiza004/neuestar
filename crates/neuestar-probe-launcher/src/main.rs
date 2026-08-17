@@ -363,6 +363,7 @@ fn contained_command(
         artifact_root,
         archive_sha256,
         metadata,
+        &neuestar_probe_core::command::frozen_helper_invocation(artifact_root),
         &neuestar_probe_core::command::frozen_child_exec(),
     )
 }

@@ -1,28 +1,106 @@
-//! `neuestar.h0/v1` record assembly for the unintegrated probe (candidate
-//! `none`). The record is validated against schema/h0.schema.json by
-//! `h0-check`; this module only guarantees the shape.
+//! `neuestar.h0/v1` record assembly. The record is validated against
+//! schema/h0.schema.json by `h0-check`; this module only guarantees the shape.
 
 use anyhow::Result;
 use serde_json::{Value, json};
 
+use crate::child::ChildEvidence;
 use crate::host::{HostFacts, SecurityState};
 
 pub const H0_SCHEMA: &str = "neuestar.h0/v1";
 
-/// The attempt outcome at the gate level.
+/// The attempt outcome. Apparatus failures (before or around containment)
+/// must not be recorded as a failed gate: gates only describe what actually
+/// ran.
 #[derive(Debug, Clone)]
 pub enum Outcome {
     Pass,
-    /// The frozen child ran under the minimum boundary and failed; H0.0 = fail.
+    /// The frozen child ran under the boundary and failed (H0.0 for the
+    /// unintegrated probe; H0.1 for an integrated candidate).
     BaselineFail {
         code: &'static str,
         message: String,
     },
-    /// The apparatus failed before or around containment; H0.0 = not-run.
+    IntegrationFail {
+        code: &'static str,
+        message: String,
+    },
     ApparatusFail {
         code: &'static str,
         message: String,
     },
+}
+
+/// Candidate-specific evidence (Candidate A1; absent for candidate none).
+#[derive(Debug, Clone)]
+pub struct CandidateEvidence {
+    pub candidate: &'static str,
+    pub integration_identity_sha256: String,
+    pub neuestar_integration_package_sha256: String,
+    pub integration_source_sha256: String,
+    pub security_policy_sha256: String,
+    pub trusted_helper: TrustedHelperEvidence,
+    pub burden: BurdenEvidence,
+    pub privileged_install_operations: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TrustedHelperEvidence {
+    pub canonical_path: String,
+    pub sha256: String,
+    pub uid: u32,
+    pub gid: u32,
+    pub mode: u32,
+    pub parent_mount_writable_by_test_user: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct BurdenEvidence {
+    pub installed_files: Vec<InstalledFile>,
+    pub policy_loc: u64,
+    pub distro_branch_count: u64,
+    pub carried_components: Vec<CarriedComponent>,
+    pub helper_loc: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstalledFile {
+    pub path: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub uid: u32,
+    pub gid: u32,
+    pub mode: u32,
+    pub kind: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct CarriedComponent {
+    pub upstream_project: String,
+    pub upstream_version_commit: String,
+    pub source_provenance: String,
+    pub binary_sha256: String,
+    pub patch_count: u64,
+    pub security_update_responsibility: String,
+}
+
+/// Gate results: only the gates that actually ran are pass/fail; everything
+/// else is not-run.
+#[derive(Debug, Clone)]
+pub struct Gates {
+    pub h0_0: &'static str,
+    pub h0_1: &'static str,
+    pub h0_1s: &'static str,
+}
+
+impl Gates {
+    pub fn not_run() -> Self {
+        Gates {
+            h0_0: "not-run",
+            h0_1: "not-run",
+            h0_1s: "not-run",
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -40,10 +118,13 @@ pub fn build(
     helper_started: bool,
     child_reached: bool,
     child_ns: Option<(&str, &str)>,
+    security_evidence: Option<&ChildEvidence>,
     process_stderr: Option<&str>,
     pre_host_state: &str,
     post_host_state: &str,
     outcome: &Outcome,
+    gates: &Gates,
+    candidate: Option<&CandidateEvidence>,
 ) -> Result<Value> {
     let (classification, failure) = match outcome {
         Outcome::Pass => ("pass", None),
@@ -51,6 +132,14 @@ pub fn build(
             "fail",
             Some(json!({
                 "stage": "baseline",
+                "code": code,
+                "message": bounded(message, 2048),
+            })),
+        ),
+        Outcome::IntegrationFail { code, message } => (
+            "fail",
+            Some(json!({
+                "stage": "integration",
                 "code": code,
                 "message": bounded(message, 2048),
             })),
@@ -70,20 +159,95 @@ pub fn build(
             "helper_started": helper_started,
             "child_reached": child_reached,
         });
-        // The H0.P outcome child's namespace identities come from the frozen
-        // child result. CapEff/profile evidence is H0.1S-only (dedicated
-        // security-evidence invocation) and is added there with strict parsing.
         if let Some((user_ns, mount_ns)) = child_ns {
             value["child_user_namespace_id"] = json!(user_ns);
             value["child_mount_namespace_id"] = json!(mount_ns);
         }
+        if let Some(evidence) = security_evidence {
+            value["child_profile_label"] = json!(evidence.profile_label);
+            let mask = neuestar_probe_core::capabilities::parse_cap_eff_hex(&evidence.cap_eff_hex)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("child CapEff is unparseable: {}", evidence.cap_eff_hex)
+                })?;
+            value["child_effective_capabilities"] =
+                json!(neuestar_probe_core::capabilities::decode_cap_mask(mask));
+            value["child_cap_eff_hex"] = json!(evidence.cap_eff_hex);
+            value["child_user_namespace_id"] = json!(evidence.user_namespace);
+            value["child_mount_namespace_id"] = json!(evidence.mount_namespace);
+        }
         value
     };
 
-    let h0_0 = match outcome {
-        Outcome::Pass => "pass",
-        Outcome::BaselineFail { .. } => "fail",
-        Outcome::ApparatusFail { .. } => "not-run",
+    let (candidate_name, integration, trusted_helper, burden, privileged_ops) = match candidate {
+        Some(evidence) => (
+            evidence.candidate,
+            json!({
+                "integration_identity_sha256": evidence.integration_identity_sha256,
+                "neuestar_integration_package_sha256": evidence.neuestar_integration_package_sha256,
+                "integration_source_sha256": evidence.integration_source_sha256,
+                "security_policy_sha256": evidence.security_policy_sha256,
+            }),
+            json!({
+                "canonical_path": evidence.trusted_helper.canonical_path,
+                "sha256": evidence.trusted_helper.sha256,
+                "uid": evidence.trusted_helper.uid,
+                "gid": evidence.trusted_helper.gid,
+                "mode": evidence.trusted_helper.mode,
+                "parent_mount_writable_by_test_user": evidence.trusted_helper.parent_mount_writable_by_test_user,
+            }),
+            json!({
+                "installed_files": evidence.burden.installed_files.iter().map(|file| json!({
+                    "path": file.path,
+                    "size_bytes": file.size_bytes,
+                    "sha256": file.sha256,
+                    "uid": file.uid,
+                    "gid": file.gid,
+                    "mode": file.mode,
+                    "kind": file.kind,
+                })).collect::<Vec<_>>(),
+                "installed_byte_count": evidence.burden.installed_files.iter().map(|f| f.size_bytes).sum::<u64>(),
+                "installed_file_count": evidence.burden.installed_files.len(),
+                "policy_loc": evidence.burden.policy_loc,
+                "distro_branch_count": evidence.burden.distro_branch_count,
+                "services": [],
+                "additional_host_packages": [],
+                "neuestar_maintained_dependencies": [],
+                "carried_components": evidence.burden.carried_components.iter().map(|c| json!({
+                    "upstream_project": c.upstream_project,
+                    "upstream_version_commit": c.upstream_version_commit,
+                    "source_provenance": c.source_provenance,
+                    "binary_sha256": c.binary_sha256,
+                    "patch_count": c.patch_count,
+                    "neuestar_specific_patches": 0,
+                    "security_update_responsibility": c.security_update_responsibility,
+                })).collect::<Vec<_>>(),
+                "helper_loc": evidence.burden.helper_loc,
+            }),
+            evidence.privileged_install_operations.clone(),
+        ),
+        None => (
+            "none",
+            json!({
+                "integration_identity_sha256": sha256_hex(""),
+                "neuestar_integration_package_sha256": null,
+                "integration_source_sha256": null,
+                "security_policy_sha256": null,
+            }),
+            Value::Null,
+            json!({
+                "installed_files": [],
+                "installed_byte_count": 0,
+                "installed_file_count": 0,
+                "policy_loc": 0,
+                "distro_branch_count": 0,
+                "services": [],
+                "additional_host_packages": [],
+                "neuestar_maintained_dependencies": [],
+                "carried_components": [],
+                "helper_loc": 0,
+            }),
+            Vec::new(),
+        ),
     };
 
     let mut record = json!({
@@ -105,41 +269,25 @@ pub fn build(
             },
         },
         "security_state": security_state,
-        "candidate": "none",
-        "integration": {
-            "integration_identity_sha256": sha256_hex(""),
-            "neuestar_integration_package_sha256": null,
-            "integration_source_sha256": null,
-            "security_policy_sha256": null,
-        },
-        "trusted_helper": null,
+        "candidate": candidate_name,
+        "integration": integration,
+        "trusted_helper": trusted_helper,
         "runtime": {
             "runtime_artifact_sha256": archive_sha256,
             "generation_identity": payload_sha256,
             "application_identity": "neuestar-probe-app",
         },
-        "burden": {
-            "installed_files": [],
-            "installed_byte_count": 0,
-            "installed_file_count": 0,
-            "policy_loc": 0,
-            "distro_branch_count": 0,
-            "services": [],
-            "additional_host_packages": [],
-            "neuestar_maintained_dependencies": [],
-            "carried_components": [],
-            "helper_loc": 0,
-        },
-        "privileged_install_operations": [],
+        "burden": burden,
+        "privileged_install_operations": privileged_ops,
         "execution": execution,
         "apparatus": {
             "probe_sha256": probe_sha256,
             "containment_argv": containment_argv,
         },
         "gates": {
-            "h0_0": h0_0,
-            "h0_1": "not-run",
-            "h0_1s": "not-run",
+            "h0_0": gates.h0_0,
+            "h0_1": gates.h0_1,
+            "h0_1s": gates.h0_1s,
             "h0_2a": "not-run",
             "h0_2b": "not-run",
             "h0_3": "not-run",
