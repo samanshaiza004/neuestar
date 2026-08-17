@@ -238,7 +238,7 @@
       "description": "Null when there is no Neuestar-owned helper (candidates none and B); required object for A1/A2.",
       "type": ["object", "null"],
       "additionalProperties": false,
-      "required": ["canonical_path", "sha256", "uid", "gid", "mode", "parent_mount_writable_by_test_user"],
+      "required": ["canonical_path", "sha256", "uid", "gid", "mode", "regular_file", "parent_mount_writable_by_test_user"],
       "properties": {
         "canonical_path": {
           "type": "string",
@@ -257,6 +257,9 @@
         },
         "mode": {
           "type": "integer"
+        },
+        "regular_file": {
+          "type": "boolean"
         },
         "parent_mount_writable_by_test_user": {
           "type": "boolean"
@@ -506,7 +509,16 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "containment_argv": {
-          "description": "The executed (or intended) containment argv. Empty is representable only when the helper never started and no command was constructed (apparatus failure before command construction); when helper_started=true it must be non-empty.",
+          "description": "The executed (or intended) H0.1/H0.P containment argv. Empty is representable only when the helper never started and no command was constructed (apparatus failure before command construction); when helper_started=true it must be non-empty.",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "security_evidence_argv": {
+          "description": "The H0.1S security-evidence invocation argv (a second containment invocation with the extra evidence-probe bind). Required non-empty when gates.h0_1s is evaluated.",
           "type": "array",
           "maxItems": 128,
           "items": {
@@ -746,7 +758,7 @@
       }
     },
     {
-      "description": "H0.1S: the dedicated security-evidence invocation (CapEff raw+decoded, profile labels) is required only when H0.1S is evaluated, never for H0.P.",
+      "description": "H0.1S: the dedicated security-evidence invocation (CapEff raw+decoded, profile labels) and its argv are required only when H0.1S is evaluated, never for H0.P.",
       "if": { "properties": { "gates": { "properties": { "h0_1s": { "not": { "const": "not-run" } } } } } },
       "then": {
         "properties": {
@@ -758,6 +770,10 @@
               "child_user_namespace_id",
               "child_mount_namespace_id"
             ]
+          },
+          "apparatus": {
+            "required": ["security_evidence_argv"],
+            "properties": { "security_evidence_argv": { "minItems": 1 } }
           }
         }
       }

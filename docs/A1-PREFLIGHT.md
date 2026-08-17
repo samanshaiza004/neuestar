@@ -38,8 +38,8 @@ invocation (probe re-exec inside the same boundary).
 | **child_profile_label** | `neuestar-bwrap//&neuestar-unpriv (enforce)` |
 | **child CapEff raw / decoded** | `0000000000000000` / `[]` |
 | gates.h0_1 | **pass** |
-| gates.h0_1s | **pass** |
-| classification | pass |
+| gates.h0_1s | machine result **pass**; gate verdict **FAIL** after adversarial review |
+| classification | historical machine record: pass; adjudicated H0.1S: fail |
 | trusted_helper | `/usr/libexec/neuestar/bwrap`, uid 0, mode 0755, parent dir not user-writable |
 | burden | 3 installed files / 73,430 bytes, policy 34 LOC, 1 distro branch, 1 carried component (0 patches) |
 | schema + h0-check | valid + **PASS** (0 violations) |
@@ -47,16 +47,15 @@ invocation (probe re-exec inside the same boundary).
 ## Adjudication (2026-08-17)
 
 - **H0.1 — PASS (accepted).**
-- **H0.1S — PARTIAL / NOT YET ACCEPTED as the gate verdict.** The machine
-  result (stacked child, raw CapEff 0) is preserved as raw evidence in
-  `docs/a1-preflight-evidence/`, but the frozen H0.1S contract requires
-  negative evidence — arbitrary child code must not be able to obtain
-  equivalent setup authority, the helper must not be redirectable to a
-  user-writable executable, and installing A1 must not grant ordinary
-  application code additional host privilege — none of which the machine
-  result executed. The adversarial suite (user-writable helper copy, ordinary
-  app userns attempt, malicious child, hostile LD_PRELOAD/loader-env
-  injection, mechanized static invariants) is the pending gate.
+- **H0.1S — FAIL.** The historical machine result (stacked child, raw CapEff
+  0) is preserved unchanged as raw evidence in
+  `docs/a1-preflight-evidence/a1-ubuntu-report.json`; it was premature as a
+  gate verdict because it did not execute the required negatives. The focused
+  adversarial suite then found a genuine bypass: a user-controlled
+  `LD_PRELOAD` constructor running inside the trusted helper created a nested
+  user namespace and successfully wrote `uid_map` before bwrap's normal logic.
+  The suite was halted at that stop condition; the malicious-child specimen's
+  loader failure is inconclusive, not a negative result.
 
 ## Interpretation
 
@@ -64,21 +63,28 @@ invocation (probe re-exec inside the same boundary).
   policy attached to its path recovers the minimum user+mount operation on
   Ubuntu 26.04 — the same operation that fails zero-preparation (H0.P /
   Campaign 002, `bwrap: setting up uid map: Permission denied`).
-- **H0.1S = pass, with on-system positive evidence**: the helper is granted
-  enough authority to construct the namespace, and the contained child runs
-  under the stacked restricted profile `neuestar-bwrap//&neuestar-unpriv
-  (enforce)` with **raw CapEff 0 and an empty decoded set** — authority is
-  stripped from arbitrary child/runtime code, not merely documented. Profile
-  attachment is evidenced by the root-written install-time state (the
-  ordinary-user securityfs view is empty, as observed in H0.P; the A1 record
-  therefore does not rely on it).
-- `h0-check PASS` is evidence admissibility, not the experiment outcome.
+- The positive H0.1S specimen remains useful: the contained child reached the
+  stacked restricted profile `neuestar-bwrap//&neuestar-unpriv (enforce)` with
+  **raw CapEff 0 and an empty decoded set**.
+- **H0.1S fails its negative contract**: the hostile loader constructor
+  reported `unshare=1 uid_map=1 mount=0 pivot=0`. Arbitrary user-controlled
+  code ran in the helper's broad profile and reacquired equivalent namespace
+  setup authority. This is a genuine A1 security failure, not an apparatus
+  failure. No profile tightening or reinterpretation was applied after the
+  fact.
+- The user-writable exact helper copy and ordinary application tests remained
+  safely denied. The malicious-child run was inconclusive because the
+  host-built specimen failed to load `libpthread.so.0` before `main`.
+- `h0-check PASS` on the historical raw record was evidence admissibility, not
+  the experiment outcome; the new checker/probe now mechanize the static
+  invariants and freeze the second invocation argv.
 
-## Next per frozen GATE-H0 order
+## Gate consequence
 
-NixOS zero-integration control (fresh run as a drift control) → Fedora 44 →
-Arch official `linux` → Ubuntu 24.04 current-updates → A1 vs B → H0.5 churn.
-No Fedora/Arch bases built yet.
+H0.1S is **FAIL**. Stop A1 evaluation here; do not proceed to the NixOS
+control, Fedora/Arch/Ubuntu baselines, A1-vs-B comparison, or later H0 gates.
+The A1 trust-anchor design must be revised and re-adjudicated before any
+further substrate control runs.
 
 Evidence: [`docs/a1-preflight-evidence/`](a1-preflight-evidence/) (record, run
 log, pre-run state).

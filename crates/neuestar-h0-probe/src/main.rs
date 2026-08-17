@@ -417,6 +417,7 @@ fn run(cli: &Cli) -> Result<u8> {
     // the probe re-executes itself inside the SAME boundary to record the
     // child's profile label, CapEff raw+decoded, and namespace identity.
     let mut security_evidence = None;
+    let mut security_evidence_argv: Vec<String> = Vec::new();
     let mut gates = gates;
     if is_a1 && child_reached {
         let probe_self = std::env::current_exe().context("failed to locate probe binary")?;
@@ -428,6 +429,10 @@ fn run(cli: &Cli) -> Result<u8> {
             &system_helper_invocation(&cli.helper_path),
             &security_evidence_child_exec(&probe_self),
         );
+        security_evidence_argv = evidence_command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
         match run_contained(&mut evidence_command) {
             Ok(evidence_run) if evidence_run.status == Some(0) => {
                 match read_child_evidence(&report_parent.join("h0-child-evidence.json")) {
@@ -440,7 +445,27 @@ fn run(cli: &Cli) -> Result<u8> {
                                 mask.unwrap_or(u64::MAX),
                             )
                             .is_empty();
-                        gates.h0_1s = if no_setup_caps { "pass" } else { "fail" };
+                        // The child must actually be under the restricted
+                        // stacked profile, not merely unconfined with no caps.
+                        let label = &evidence.profile_label;
+                        let restricted = label.contains("unpriv") && !label.contains("unconfined");
+                        let expected_helper_path = std::fs::canonicalize(&cli.helper_path)
+                            .unwrap_or_else(|_| cli.helper_path.clone())
+                            .display()
+                            .to_string();
+                        let attachment_ok = a1_state.as_ref().is_some_and(|state| {
+                            state.loaded_profiles.iter().any(|profile| {
+                                profile.name == "neuestar-bwrap"
+                                    && profile.mode == "enforce"
+                                    && profile.path.as_deref()
+                                        == Some(expected_helper_path.as_str())
+                            })
+                        });
+                        gates.h0_1s = if restricted && no_setup_caps && attachment_ok {
+                            "pass"
+                        } else {
+                            "fail"
+                        };
                         security_evidence = Some(evidence);
                     }
                     Err(_) => {
@@ -524,6 +549,7 @@ fn run(cli: &Cli) -> Result<u8> {
         &metadata.payload_manifest_sha256,
         &probe_sha256,
         &argv,
+        &security_evidence_argv,
         iso_snapshot_date,
         &cli.config_surface,
         true,
@@ -699,6 +725,7 @@ fn build_a1_evidence(
             uid: helper_metadata.uid(),
             gid: helper_metadata.gid(),
             mode: helper_metadata.mode(),
+            regular_file: helper_metadata.is_file(),
             parent_mount_writable_by_test_user: parent_writable,
         },
         burden: BurdenEvidence {
@@ -750,6 +777,7 @@ fn write_apparatus_failure(
         "unverified",
         &sha256_self(),
         argv,
+        &[],
         cli.iso_snapshot_date.as_deref().unwrap_or("unknown"),
         &cli.config_surface,
         helper_started,

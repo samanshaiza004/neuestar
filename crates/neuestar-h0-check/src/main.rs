@@ -297,6 +297,65 @@ fn check_policy(record: &Value, violations: &mut Vec<Value>) {
                 ),
             }));
         }
+        // Static invariants (frozen H0.1S negative evidence): the helper must
+        // be root-owned, non-user-writable, with a non-user-writable parent,
+        // and the child must be under the restricted stacked profile.
+        let helper = &record["trusted_helper"];
+        if helper["uid"].as_u64() != Some(0) {
+            violations.push(json!({
+                "stage": "security-preservation",
+                "code": "h0.1s-helper-not-root-owned",
+                "message": "H0.1S pass with a non-root-owned trusted helper",
+            }));
+        }
+        if helper["regular_file"].as_bool() != Some(true) {
+            violations.push(json!({
+                "stage": "security-preservation",
+                "code": "h0.1s-helper-not-regular-file",
+                "message": "H0.1S pass without a regular-file trusted helper",
+            }));
+        }
+        if helper["mode"].as_u64().is_some_and(|mode| mode & 0o22 != 0) {
+            violations.push(json!({
+                "stage": "security-preservation",
+                "code": "h0.1s-helper-writable",
+                "message": "H0.1S pass with a group/world-writable trusted helper",
+            }));
+        }
+        if helper["parent_mount_writable_by_test_user"].as_bool() == Some(true) {
+            violations.push(json!({
+                "stage": "security-preservation",
+                "code": "h0.1s-helper-parent-writable",
+                "message": "H0.1S pass with a user-writable helper parent directory",
+            }));
+        }
+        let child_label = record["execution"]["child_profile_label"]
+            .as_str()
+            .unwrap_or("");
+        if !child_label.contains("unpriv") || child_label.contains("unconfined") {
+            violations.push(json!({
+                "stage": "security-preservation",
+                "code": "h0.1s-child-not-stacked",
+                "message": format!("H0.1S pass without the restricted stacked child label: {child_label}"),
+            }));
+        }
+        let expected_path = helper["canonical_path"].as_str().unwrap_or("");
+        let attachment_ok = record["security_state"]["apparmor"]["loaded_profiles"]
+            .as_array()
+            .is_some_and(|profiles| {
+                profiles.iter().any(|profile| {
+                    profile["name"] == "neuestar-bwrap"
+                        && profile["mode"] == "enforce"
+                        && profile["path"].as_str() == Some(expected_path)
+                })
+            });
+        if !attachment_ok {
+            violations.push(json!({
+                "stage": "security-preservation",
+                "code": "h0.1s-helper-attachment-mismatch",
+                "message": format!("H0.1S pass without an enforce profile attached to {expected_path}"),
+            }));
+        }
     }
 }
 
@@ -359,9 +418,11 @@ mod tests {
 
     fn add_security_evidence(record: &mut Value) {
         record["gates"]["h0_1s"] = json!("pass");
-        record["execution"]["child_profile_label"] = json!("child");
+        record["execution"]["child_profile_label"] =
+            json!("neuestar-bwrap//&neuestar-unpriv (enforce)");
         record["execution"]["child_effective_capabilities"] = json!([]);
         record["execution"]["child_cap_eff_hex"] = json!("0000000000000000");
+        record["apparatus"]["security_evidence_argv"] = json!(["bwrap", "--security-evidence"]);
     }
 
     fn base(
@@ -392,13 +453,13 @@ mod tests {
             "host": {"distro_id": "ubuntu", "distro_version": "26.04", "kernel_release": "7.0.0-29-generic", "architecture": "x86_64",
                      "target_profile": {"iso_snapshot_date": "2026-08-01", "config_surface": "stock"}},
             "security_state": {"lsm": "apparmor", "apparmor": {"parser_version": "4.0.1", "abi": "abi 5.0", "restriction_sysctl": 1,
-                 "loaded_profiles": [{"name": "neuestar-host", "mode": "enforce"}], "loaded_profile_state_sha256": S}},
+                 "loaded_profiles": [{"name": if candidate == "A1" { "neuestar-bwrap" } else { "neuestar-host" }, "mode": "enforce", "path": if candidate == "A1" { "/usr/libexec/neuestar/bwrap" } else { "/usr/bin/host" } }], "loaded_profile_state_sha256": S}},
             "candidate": candidate,
             "integration": {"integration_identity_sha256": S, "neuestar_integration_package_sha256": sha,
                             "integration_source_sha256": source_sha,
                             "security_policy_sha256": sha},
             "trusted_helper": if trusted {
-                json!({"canonical_path": "/usr/libexec/neuestar/bwrap", "sha256": S, "uid": 0, "gid": 0, "mode": 493, "parent_mount_writable_by_test_user": false})
+                json!({"canonical_path": "/usr/libexec/neuestar/bwrap", "sha256": S, "uid": 0, "gid": 0, "mode": 493, "regular_file": true, "parent_mount_writable_by_test_user": false})
             } else {
                 Value::Null
             },

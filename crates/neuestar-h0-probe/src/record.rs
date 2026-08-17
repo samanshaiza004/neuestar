@@ -52,6 +52,7 @@ pub struct TrustedHelperEvidence {
     pub uid: u32,
     pub gid: u32,
     pub mode: u32,
+    pub regular_file: bool,
     pub parent_mount_writable_by_test_user: bool,
 }
 
@@ -114,6 +115,7 @@ pub fn build(
     payload_sha256: &str,
     probe_sha256: &str,
     containment_argv: &[String],
+    security_evidence_argv: &[String],
     iso_snapshot_date: &str,
     config_surface: &str,
     helper_started: bool,
@@ -197,6 +199,7 @@ pub fn build(
                 "uid": evidence.trusted_helper.uid,
                 "gid": evidence.trusted_helper.gid,
                 "mode": evidence.trusted_helper.mode,
+                "regular_file": evidence.trusted_helper.regular_file,
                 "parent_mount_writable_by_test_user": evidence.trusted_helper.parent_mount_writable_by_test_user,
             }),
             json!({
@@ -309,6 +312,9 @@ pub fn build(
             "post_host_state": bounded(post_host_state, 65536),
         },
     });
+    if !security_evidence_argv.is_empty() {
+        record["apparatus"]["security_evidence_argv"] = json!(security_evidence_argv);
+    }
     if let Some(failure) = failure {
         record["failure"] = failure;
     }
