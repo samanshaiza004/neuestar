@@ -22,8 +22,8 @@ use sha2::{Digest, Sha256};
 const EXIT_VERIFY: u8 = 65;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_CONTAINMENT: u8 = 71;
-const HELPER_STDERR_MAX_BYTES: u64 = 64 * 1024;
-const HELPER_STDERR_MAX_CHARS: usize = 4096;
+const PROCESS_STDERR_MAX_BYTES: usize = 64 * 1024;
+const PROCESS_STDERR_MAX_CHARS: usize = 4096;
 const MAX_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_MANIFEST_ENTRIES: usize = 4096;
 const UNKNOWN_SHA256: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -287,25 +287,31 @@ fn execute_contained(
     }
 
     let child_result_path = report_parent.join("child-result.json");
+    if reject_stale_evidence(
+        &child_result_path,
+        &cli.report,
+        archive_sha256,
+        metadata,
+        matrix_cell,
+        host,
+    )? {
+        return Ok(EXIT_VERIFY);
+    }
     let parent_user_namespace = namespace_identity("/proc/self/ns/user");
     let parent_mount_namespace = namespace_identity("/proc/self/ns/mnt");
     let mut command = contained_command(report_parent, artifact_root, archive_sha256, metadata);
-    let (status, helper_stderr) = match run_helper(&mut command) {
+    let (status, process_stderr) = match run_helper(&mut command) {
         Ok(pair) => pair,
-        Err(error) => {
-            let mut report = failure_report(
+        Err((substage, error)) => {
+            write_helper_failure(
+                &cli.report,
                 archive_sha256,
-                Some(metadata),
+                metadata,
                 matrix_cell,
                 host,
-                FailureStage::Containment,
-                &format!("failed to execute bundled bubblewrap: {error}"),
-            );
-            report.containment.substage = Some(ContainmentSubstage::HelperPreflight);
-            report
-                .validate()
-                .context("generated failure report is invalid")?;
-            write_json(&cli.report, &report)?;
+                substage,
+                &error,
+            )?;
             return Ok(EXIT_CONTAINMENT);
         }
     };
@@ -315,64 +321,34 @@ fn execute_contained(
             valid_successful_child_result(result, &parent_user_namespace, &parent_mount_namespace)
         })
     {
-        let mut report = phase_one_report(
+        write_success_report(
+            &cli.report,
             archive_sha256,
             metadata,
             matrix_cell,
             host,
+            artifact_root,
+            report_parent,
             child_result.as_ref().expect("checked above"),
-        );
-        record_host_paths(&mut report, artifact_root, report_parent);
-        report.validate().context("generated report is invalid")?;
-        write_json(&cli.report, &report)?;
+            process_stderr,
+        )?;
         return Ok(0);
     }
 
-    let substage = containment_substage(status, child_result.as_ref());
-    let detail = child_failure_detail(status, child_result.as_ref());
-    let containment_constructed = child_result.as_ref().is_some_and(|result| {
-        result.contained
-            && namespace_changed(&result.user_namespace, &parent_user_namespace, "user:")
-            && namespace_changed(&result.mount_namespace, &parent_mount_namespace, "mnt:")
-    });
-    let failure_stage = if containment_constructed {
-        FailureStage::Launch
-    } else {
-        FailureStage::Containment
-    };
-    let mut report = failure_report(
+    write_failure_report(
+        &cli.report,
         archive_sha256,
-        Some(metadata),
+        metadata,
         matrix_cell,
         host,
-        failure_stage,
-        &detail,
-    );
-    report.containment.substage = Some(substage);
-    if let Some(stderr) = helper_stderr {
-        report.containment.helper_stderr = Some(stderr);
-    }
-    if containment_constructed {
-        report.containment.namespace_constructed = true;
-        report.containment.user_namespace_constructed = true;
-        report.containment.mount_namespace_constructed = true;
-        report.containment.user_namespace_id = child_result
-            .as_ref()
-            .map(|result| result.user_namespace.clone());
-        report.containment.mount_namespace_id = child_result
-            .as_ref()
-            .map(|result| result.mount_namespace.clone());
-        report.gates.l0_0_containment = GateState::Pass;
-        report.gates.l0_1_launch = GateState::Fail;
-        if let Some(result) = child_result {
-            report.runtime.loader_diagnostics = result.mapped_libc_paths;
-        }
-        record_host_paths(&mut report, artifact_root, report_parent);
-    }
-    report
-        .validate()
-        .context("generated failure report is invalid")?;
-    write_json(&cli.report, &report)?;
+        artifact_root,
+        report_parent,
+        status,
+        child_result.as_ref(),
+        &parent_user_namespace,
+        &parent_mount_namespace,
+        process_stderr,
+    )?;
     Ok(EXIT_CONTAINMENT)
 }
 
@@ -447,7 +423,7 @@ fn contained_command(
             "1",
             "--setenv",
             "NEUESTAR_REPORT_SCHEMA",
-            "neuestar.report/v1",
+            "neuestar.report/v2",
             "--setenv",
             "NEUESTAR_ARCHIVE_SHA256",
         ])
@@ -707,7 +683,7 @@ fn failure_report(
     message: &str,
 ) -> Report {
     Report {
-        schema: SchemaVersion::V1,
+        schema: SchemaVersion::V2,
         artifact: artifact_evidence(archive_sha256, metadata),
         matrix_cell,
         observed_host: observed_host(host),
@@ -721,7 +697,7 @@ fn failure_report(
             host_paths_exposed: Vec::new(),
             forbidden_preparation: Vec::new(),
             substage: None,
-            helper_stderr: None,
+            process_stderr: None,
         },
         runtime: RuntimeEvidence {
             libc_source: LibcSource::NotDetermined,
@@ -906,36 +882,206 @@ fn containment_substage(
     }
 }
 
-fn run_helper(command: &mut Command) -> Result<(ExitStatus, Option<String>)> {
+fn run_helper(
+    command: &mut Command,
+) -> Result<(ExitStatus, Option<String>), (ContainmentSubstage, anyhow::Error)> {
     command.stderr(Stdio::piped());
-    let mut child = command
-        .spawn()
-        .context("failed to spawn bundled bubblewrap")?;
+    let mut child = command.spawn().map_err(|error| {
+        (
+            ContainmentSubstage::HelperPreflight,
+            anyhow::Error::new(error).context("failed to spawn bundled bubblewrap"),
+        )
+    })?;
     let stderr_thread = child
         .stderr
         .take()
-        .map(|stderr| thread::spawn(move || capture_helper_stderr(stderr)));
-    let status = child
-        .wait()
-        .context("failed to wait for bundled bubblewrap")?;
-    let helper_stderr = stderr_thread
+        .map(|stderr| thread::spawn(move || capture_process_stderr(stderr)));
+    let status = child.wait().map_err(|error| {
+        (
+            ContainmentSubstage::HelperExecution,
+            anyhow::Error::new(error).context("failed to wait for bundled bubblewrap"),
+        )
+    })?;
+    let process_stderr = stderr_thread
         .and_then(|handle| handle.join().ok())
         .flatten();
-    Ok((status, helper_stderr))
+    Ok((status, process_stderr))
 }
 
-fn capture_helper_stderr(stderr: ChildStderr) -> Option<String> {
-    let mut buffer = Vec::new();
-    if stderr
-        .take(HELPER_STDERR_MAX_BYTES)
-        .read_to_end(&mut buffer)
-        .is_err()
-    {
-        return None;
+/// Drains the helper/child stderr stream to EOF while retaining only a bounded
+/// UTF-8-lossy prefix, so the recorder never stops consuming the pipe and
+/// cannot perturb the measured process.
+fn capture_process_stderr(stderr: ChildStderr) -> Option<String> {
+    let mut reader = BufReader::new(stderr);
+    let mut retained: Vec<u8> = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) if retained.len() < PROCESS_STDERR_MAX_BYTES => {
+                let room = PROCESS_STDERR_MAX_BYTES - retained.len();
+                retained.extend_from_slice(&chunk[..n.min(room)]);
+            }
+            Ok(_) => {}
+            Err(_) => return None,
+        }
     }
-    let text = String::from_utf8_lossy(&buffer);
-    let bounded: String = text.chars().take(HELPER_STDERR_MAX_CHARS).collect();
+    let text = String::from_utf8_lossy(&retained);
+    let bounded: String = text.chars().take(PROCESS_STDERR_MAX_CHARS).collect();
     (!bounded.is_empty()).then_some(bounded)
+}
+
+/// Refuses to start an attempt whose evidence directory already contains a
+/// child result from an earlier attempt; historical files must never
+/// influence a current classification.
+fn ensure_fresh_evidence(child_result_path: &Path) -> Result<()> {
+    if child_result_path.exists() {
+        bail!(
+            "evidence directory is not fresh: {} already exists; use a fresh evidence directory",
+            child_result_path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Writes the preflight rejection for a contaminated evidence directory and
+/// reports whether the attempt must stop before helper execution.
+fn reject_stale_evidence(
+    child_result_path: &Path,
+    report_path: &Path,
+    archive_sha256: &str,
+    metadata: &ArtifactMetadata,
+    matrix_cell: MatrixCell,
+    host: &HostMetadata,
+) -> Result<bool> {
+    match ensure_fresh_evidence(child_result_path) {
+        Ok(()) => Ok(false),
+        Err(error) => {
+            write_bootstrap_failure(
+                report_path,
+                archive_sha256,
+                Some(metadata),
+                matrix_cell,
+                host,
+                FailureStage::Preflight,
+                &format!("{error:#}"),
+            )?;
+            Ok(true)
+        }
+    }
+}
+
+/// Writes the containment failure report for a helper that could not start or
+/// could not be waited on, using the substage the launcher can prove.
+fn write_helper_failure(
+    report_path: &Path,
+    archive_sha256: &str,
+    metadata: &ArtifactMetadata,
+    matrix_cell: MatrixCell,
+    host: &HostMetadata,
+    substage: ContainmentSubstage,
+    error: &anyhow::Error,
+) -> Result<()> {
+    let mut report = failure_report(
+        archive_sha256,
+        Some(metadata),
+        matrix_cell,
+        host,
+        FailureStage::Containment,
+        &format!("failed to run bundled bubblewrap: {error:#}"),
+    );
+    report.containment.substage = Some(substage);
+    report
+        .validate()
+        .context("generated failure report is invalid")?;
+    write_json(report_path, &report)
+}
+
+// Run-context threading mirrors the existing report writers (failure_report,
+// write_bootstrap_failure); the parameters are deliberately not folded into a
+// struct to keep this diff scoped to the containment fixes.
+#[allow(clippy::too_many_arguments)]
+fn write_success_report(
+    report_path: &Path,
+    archive_sha256: &str,
+    metadata: &ArtifactMetadata,
+    matrix_cell: MatrixCell,
+    host: &HostMetadata,
+    artifact_root: &Path,
+    report_parent: &Path,
+    child: &ChildResult,
+    process_stderr: Option<String>,
+) -> Result<()> {
+    let mut report = phase_one_report(archive_sha256, metadata, matrix_cell, host, child);
+    if let Some(stderr) = process_stderr {
+        report.containment.process_stderr = Some(stderr);
+    }
+    record_host_paths(&mut report, artifact_root, report_parent);
+    report.validate().context("generated report is invalid")?;
+    write_json(report_path, &report)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_failure_report(
+    report_path: &Path,
+    archive_sha256: &str,
+    metadata: &ArtifactMetadata,
+    matrix_cell: MatrixCell,
+    host: &HostMetadata,
+    artifact_root: &Path,
+    report_parent: &Path,
+    status: ExitStatus,
+    child_result: Option<&ChildResult>,
+    parent_user_namespace: &str,
+    parent_mount_namespace: &str,
+    process_stderr: Option<String>,
+) -> Result<()> {
+    let substage = containment_substage(status, child_result);
+    let detail = child_failure_detail(status, child_result);
+    let containment_constructed = child_result.is_some_and(|result| {
+        result.contained
+            && namespace_changed(&result.user_namespace, parent_user_namespace, "user:")
+            && namespace_changed(&result.mount_namespace, parent_mount_namespace, "mnt:")
+    });
+    let failure_stage = if containment_constructed {
+        FailureStage::Launch
+    } else {
+        FailureStage::Containment
+    };
+    let mut report = failure_report(
+        archive_sha256,
+        Some(metadata),
+        matrix_cell,
+        host,
+        failure_stage,
+        &detail,
+    );
+    report.containment.substage = Some(substage);
+    if let Some(stderr) = process_stderr {
+        report.containment.process_stderr = Some(stderr);
+    }
+    if containment_constructed {
+        report.containment.namespace_constructed = true;
+        report.containment.user_namespace_constructed = true;
+        report.containment.mount_namespace_constructed = true;
+        report.containment.user_namespace_id =
+            child_result.map(|result| result.user_namespace.clone());
+        report.containment.mount_namespace_id =
+            child_result.map(|result| result.mount_namespace.clone());
+        report.gates.l0_0_containment = GateState::Pass;
+        report.gates.l0_1_launch = GateState::Fail;
+        if let Some(result) = child_result {
+            report
+                .runtime
+                .loader_diagnostics
+                .clone_from(&result.mapped_libc_paths);
+        }
+        record_host_paths(&mut report, artifact_root, report_parent);
+    }
+    report
+        .validate()
+        .context("generated failure report is invalid")?;
+    write_json(report_path, &report)
 }
 
 fn prepare_report_parent(report: &Path) -> Result<PathBuf> {
@@ -1179,7 +1325,6 @@ fn write_bootstrap_failure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::process::ExitStatusExt;
 
     #[test]
     fn sha256_validation_is_strict() {
@@ -1367,18 +1512,64 @@ mod tests {
             mapped_libc_paths: Vec::new(),
             failure: None,
         };
+        let failed = Command::new("sh")
+            .arg("-c")
+            .arg("exit 71")
+            .status()
+            .expect("spawn sh");
+        let succeeded = Command::new("sh")
+            .arg("-c")
+            .arg("exit 0")
+            .status()
+            .expect("spawn sh");
         assert_eq!(
-            containment_substage(ExitStatus::from_raw(71), None),
+            containment_substage(failed, None),
             ContainmentSubstage::HelperExecution
         );
         assert_eq!(
-            containment_substage(ExitStatus::from_raw(0), None),
+            containment_substage(succeeded, None),
             ContainmentSubstage::ChildResultMissing
         );
         assert_eq!(
-            containment_substage(ExitStatus::from_raw(71), Some(&result)),
+            containment_substage(failed, Some(&result)),
             ContainmentSubstage::ChildLaunch
         );
+    }
+
+    #[test]
+    fn stale_child_result_blocks_a_fresh_attempt() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("child-result.json");
+        fs::write(&path, "{\"schema\":\"neuestar.child/v1\"}").expect("stale fixture");
+        assert!(
+            ensure_fresh_evidence(&path).is_err(),
+            "a stale child result must refuse the attempt"
+        );
+        fs::remove_file(&path).expect("cleanup");
+        assert!(ensure_fresh_evidence(&path).is_ok());
+    }
+
+    #[test]
+    fn process_stderr_capture_is_bounded_and_preserves_exit_status() {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(
+                "i=0; while [ $i -lt 4000 ]; do \
+                 echo 0123456789abcdefghijklmnopqrstuvwxyz0123456789 >&2; \
+                 i=$((i+1)); done; exit 71",
+            )
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sh");
+        let stderr = child.stderr.take().expect("piped stderr");
+        let handle = thread::spawn(move || capture_process_stderr(stderr));
+        let status = child.wait().expect("wait sh");
+        let captured = handle.join().expect("stderr thread");
+        assert_eq!(status.code(), Some(71), "exit status must be preserved");
+        let text = captured.expect("captured stderr");
+        assert!(text.chars().count() <= PROCESS_STDERR_MAX_CHARS);
+        assert!(text.contains("0123456789abcdefghijklmnopqrstuvwxyz"));
     }
 
     #[test]

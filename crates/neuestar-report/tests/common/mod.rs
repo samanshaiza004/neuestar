@@ -44,7 +44,7 @@ pub fn clean_report() -> Report {
             host_paths_exposed: Vec::new(),
             forbidden_preparation: Vec::new(),
             substage: None,
-            helper_stderr: None,
+            process_stderr: None,
         },
         runtime: RuntimeEvidence {
             libc_source: LibcSource::Controlled,

@@ -120,12 +120,18 @@ Application mount: `--ro-bind <artifact>/app /app` replaces
 `--ro-bind <artifact>/app/probe /app/probe` — `root/app` is already constructed
 by the builder, eliminating the missing-file mountpoint without adding a dummy.
 
-Failure diagnostics (report schema): add `containment.substage` enumerated
-`helper-start | userns | root-construction | child-exec`, and a bounded
-`containment.helper_stderr`. The current schema collapses every containment
-failure to `stage: containment / code: containment-failed / "bubblewrap or child
-exited with status 1"`, which forced correlating `report.json` with external
-logs; a later investigator should not have to do that.
+Failure diagnostics (report schema): `neuestar.report/v1` remains the frozen
+Campaign 001 schema (`schema/report-v1.schema.json`); Campaign 002 emits
+`neuestar.report/v2` (`schema/report.schema.json`), which adds
+`containment.substage` enumerated `helper-preflight | helper-execution |
+child-result-missing | child-launch` — derived only from launcher-controlled
+evidence (helper start, exit status, child-result presence), never from
+helper-stderr string matching — and a bounded `containment.process_stderr`
+(UTF-8-lossy prefix, ≤ 4096 chars). V1 reports carrying the diagnostics fields
+are rejected. The Campaign 001 schema collapses every containment failure to
+`stage: containment / code: containment-failed / "bubblewrap or child exited
+with status 1"`, which forced correlating `report.json` with external logs; a
+later investigator should not have to do that.
 
 Execution flow:
 

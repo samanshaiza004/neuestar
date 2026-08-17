@@ -26,21 +26,38 @@ fn conditional_pass_with_host_glibc_is_valid() {
 }
 
 #[test]
-fn containment_substage_and_helper_stderr_round_trip_in_reports() {
-    let mut report: Report =
-        serde_json::from_str(include_str!("fixtures/fail_containment.json")).unwrap();
-    report.containment.substage = Some(neuestar_report::ContainmentSubstage::HelperExecution);
-    report.containment.helper_stderr =
-        Some("bwrap: Can't create file at /app/probe: Read-only file system".to_owned());
+fn containment_diagnostics_fields_round_trip_in_v2_reports() {
+    let report: Report =
+        serde_json::from_str(include_str!("fixtures/containment_failure_v2.json")).unwrap();
     assert!(report.validate().is_ok());
     let value = serde_json::to_value(&report).unwrap();
     assert_eq!(value["containment"]["substage"], json!("helper-execution"));
     assert_eq!(
-        value["containment"]["helper_stderr"],
+        value["containment"]["process_stderr"],
         json!("bwrap: Can't create file at /app/probe: Read-only file system")
     );
     let decoded: Report = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(serde_json::to_value(&decoded).unwrap(), value);
+}
+
+#[test]
+fn v1_reports_reject_containment_diagnostics_fields() {
+    let mut report = clean_report();
+    report.containment.substage = Some(neuestar_report::ContainmentSubstage::HelperExecution);
+    assert!(matches!(
+        report.validate().unwrap_err(),
+        ReportError::SchemaVersionField {
+            schema: "neuestar.report/v1"
+        }
+    ));
+    let mut report = clean_report();
+    report.containment.process_stderr = Some("bwrap: loopback: Failed RTM_NEWADDR".to_owned());
+    assert!(matches!(
+        report.validate().unwrap_err(),
+        ReportError::SchemaVersionField {
+            schema: "neuestar.report/v1"
+        }
+    ));
 }
 
 #[test]
@@ -306,7 +323,7 @@ fn incomplete_attempts_are_recordable_without_inventing_success() {
 #[test]
 fn unknown_schema_versions_are_rejected() {
     let mut value = serde_json::to_value(clean_report()).unwrap();
-    value["schema"] = json!("neuestar.report/v2");
+    value["schema"] = json!("neuestar.report/v0");
     assert!(serde_json::from_value::<Report>(value).is_err());
 }
 
@@ -360,7 +377,12 @@ fn schema_fixtures_round_trip_and_validate() {
 #[test]
 fn schema_identifier_is_exposed() {
     assert_eq!(SchemaVersion::V1.as_str(), "neuestar.report/v1");
-    assert_eq!(SchemaVersion::V1.as_str(), neuestar_report::SCHEMA_VERSION);
+    assert_eq!(SchemaVersion::V2.as_str(), "neuestar.report/v2");
+    assert_eq!(
+        SchemaVersion::V1.as_str(),
+        neuestar_report::SCHEMA_VERSION_V1
+    );
+    assert_eq!(SchemaVersion::V2.as_str(), neuestar_report::SCHEMA_VERSION);
 }
 
 #[test]

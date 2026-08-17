@@ -1,33 +1,29 @@
 {
-  "schema": "neuestar.report/v1",
+  "schema": "neuestar.report/v2",
   "artifact": {
     "outer_archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "payload_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "source_commit": "0123456789abcdef0123456789abcdef01234567",
-    "probe_version": "0.1.0"
+    "probe_version": "0.2.0"
   },
   "matrix_cell": {
     "distro": "nixos",
     "gpu_vendor": "nvidia",
-    "display_server": "x11"
+    "display_server": "wayland"
   },
   "observed_host": {
-    "distro_id": "nixos 25.05",
-    "kernel_release": "6.12.0",
+    "distro_id": "nixos 26.05",
+    "kernel_release": "6.18.44",
     "architecture": "x86_64",
-    "gpu_description": "NVIDIA GeForce RTX 3080",
-    "driver_version": "580.82.09"
+    "gpu_description": "not-observed-phase-1",
+    "display_server": "wayland"
   },
   "containment": {
     "namespace_constructed": false,
     "user_namespace_constructed": false,
     "mount_namespace_constructed": false,
-    "forbidden_preparation": [
-      {
-        "kind": "sudo",
-        "description": "runner used sudo to install an AppArmor profile"
-      }
-    ]
+    "substage": "helper-execution",
+    "process_stderr": "bwrap: Can't create file at /app/probe: Read-only file system"
   },
   "runtime": {
     "libc_source": "not-determined",
@@ -63,10 +59,7 @@
   "classification": "fail",
   "failure": {
     "stage": "containment",
-    "code": "forbidden-preparation",
-    "message": "containment refused and forbidden preparation was recorded",
-    "details": [
-      "AppArmor denied unprivileged user namespace"
-    ]
+    "code": "containment-failed",
+    "message": "bubblewrap or child exited with status 71"
   }
 }

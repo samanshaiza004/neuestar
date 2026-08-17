@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:neuestar:report:v2",
+  "$id": "urn:neuestar:report:v1",
   "title": "Neuestar Gate L0 report",
   "description": "Versioned machine-readable Gate L0 evidence model. Cross-field invariants such as host-glibc classification, software renderers, exact L0.3 frames, and forbidden preparation are enforced by the Rust validator.",
   "type": "object",
@@ -20,7 +20,7 @@
   ],
   "properties": {
     "schema": {
-      "const": "neuestar.report/v2"
+      "const": "neuestar.report/v1"
     },
     "artifact": {
       "$ref": "#/$defs/artifact"
@@ -213,15 +213,6 @@
           "items": {
             "$ref": "#/$defs/forbiddenPreparation"
           }
-        },
-        "substage": {
-          "type": "string",
-          "enum": ["helper-preflight", "helper-execution", "child-result-missing", "child-launch"]
-        },
-        "process_stderr": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
         }
       }
     },

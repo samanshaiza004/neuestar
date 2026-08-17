@@ -3,10 +3,10 @@
 use crate::model::{
     Artifact, CaptureEvidence, Classification, ContainmentEvidence, GateResults, GateState,
     GraphicsEvidence, LibcSource, ObservedHost, PresentationEvidence, RendererKind, Report,
-    RuntimeEvidence, StructuredFailure,
+    RuntimeEvidence, SchemaVersion, StructuredFailure,
 };
 use crate::{
-    MAX_VENDOR_SPECIFIC_RULES, PRESENT_FRAME_COUNT, SCHEMA_VERSION,
+    MAX_VENDOR_SPECIFIC_RULES, PRESENT_FRAME_COUNT, SCHEMA_VERSION, SCHEMA_VERSION_V1,
     VENDOR_RULE_CATEGORY_NVIDIA_DEVICE_NODES,
 };
 
@@ -14,10 +14,16 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ReportError {
     /// The report uses an unsupported schema identifier.
-    #[error("report schema must be `neuestar.report/v1`; found `{found}`")]
+    #[error("report schema must be `neuestar.report/v1` or `neuestar.report/v2`; found `{found}`")]
     UnsupportedSchema {
         /// Schema identifier found on the report.
         found: &'static str,
+    },
+    /// A field is not permitted by the report's schema version.
+    #[error("containment diagnostics fields are not permitted by schema `{schema}`")]
+    SchemaVersionField {
+        /// Report schema identifier in force.
+        schema: &'static str,
     },
     /// A SHA-256 field is not exactly 64 hexadecimal characters.
     #[error("{field} must be exactly 64 hexadecimal characters")]
@@ -205,9 +211,16 @@ pub enum ReportError {
 ///
 /// Returns the first [`ReportError`] when the report is not admissible.
 pub fn validate(report: &Report) -> Result<(), ReportError> {
-    if report.schema.as_str() != SCHEMA_VERSION {
+    if report.schema.as_str() != SCHEMA_VERSION_V1 && report.schema.as_str() != SCHEMA_VERSION {
         return Err(ReportError::UnsupportedSchema {
             found: report.schema.as_str(),
+        });
+    }
+    if report.schema == SchemaVersion::V1
+        && (report.containment.substage.is_some() || report.containment.process_stderr.is_some())
+    {
+        return Err(ReportError::SchemaVersionField {
+            schema: report.schema.as_str(),
         });
     }
     validate_artifact(&report.artifact)?;
@@ -313,8 +326,8 @@ fn validate_containment(containment: &ContainmentEvidence) -> Result<(), ReportE
         )?;
     }
     optional_bounded(
-        containment.helper_stderr.as_deref(),
-        "containment.helper_stderr",
+        containment.process_stderr.as_deref(),
+        "containment.process_stderr",
         4096,
     )?;
     bounded_array(
