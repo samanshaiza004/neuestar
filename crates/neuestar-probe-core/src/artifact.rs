@@ -86,6 +86,87 @@ pub fn verify_payload(root: &Path) -> Result<ArtifactMetadata> {
     verify_metadata(root, &paths, &sha256_file(&manifest_path)?)
 }
 
+/// Cryptographic binding between the supplied outer archive identity
+/// (`--archive-sha256`) and the extracted artifact bytes: the outer archive
+/// file must be present in the artifact root, its SHA-256 must equal the
+/// supplied identity, and the artifact.json / SHA256SUMS embedded in the
+/// archive must be byte-identical to the extracted ones. Fail closed: a
+/// missing tarball or any mismatch is an error, so a run can never combine
+/// an outer identity with unrelated extracted payload bytes.
+pub fn verify_outer_binding(root: &Path, expected_outer_sha: &str) -> Result<()> {
+    let tarball = root.join("neuestar-probe-x86_64.tar.zst");
+    let actual_outer = sha256_file(&tarball)
+        .with_context(|| format!("outer archive missing at {}", tarball.display()))?;
+    if actual_outer != expected_outer_sha {
+        bail!(
+            "outer archive SHA-256 mismatch: expected {expected_outer_sha}, observed {actual_outer}"
+        );
+    }
+
+    let mut compressed = File::open(&tarball)?;
+    let mut decoder =
+        ruzstd::StreamingDecoder::new(&mut compressed).context("outer archive is not zstd")?;
+    let mut archive_bytes = Vec::new();
+    std::io::Read::read_to_end(&mut decoder, &mut archive_bytes)
+        .context("outer archive failed to decompress")?;
+
+    let embedded = tar_entries(&archive_bytes)?;
+    for name in ["artifact.json", "SHA256SUMS"] {
+        // the archive may nest entries under a top directory (e.g.
+        // ./neuestar-probe/artifact.json); match on the basename
+        let embedded_bytes = embedded
+            .iter()
+            .find(|(entry_name, _)| {
+                *entry_name == name || entry_name.ends_with(&format!("/{name}"))
+            })
+            .map(|(_, bytes)| bytes)
+            .ok_or_else(|| anyhow!("outer archive lacks {name}"))?;
+        let extracted = std::fs::read(root.join(name))
+            .with_context(|| format!("extracted artifact lacks {name}"))?;
+        if embedded_bytes.as_slice() != extracted.as_slice() {
+            bail!("outer archive {name} differs from the extracted {name}");
+        }
+    }
+    Ok(())
+}
+
+/// Minimal ustar extraction for the few embedded files we compare.
+fn tar_entries(archive: &[u8]) -> Result<std::collections::HashMap<String, Vec<u8>>> {
+    let mut entries = std::collections::HashMap::new();
+    let mut offset = 0usize;
+    while offset + 512 <= archive.len() {
+        let header = &archive[offset..offset + 512];
+        if header.iter().all(|byte| *byte == 0) {
+            break; // end of archive
+        }
+        let name = header[..100]
+            .iter()
+            .take_while(|byte| **byte != 0)
+            .map(|byte| *byte as char)
+            .collect::<String>();
+        let size_text = std::str::from_utf8(&header[124..136])
+            .ok()
+            .map(|text| text.trim_end_matches('\0').trim())
+            .unwrap_or("");
+        let size = usize::from_str_radix(size_text, 8).unwrap_or(0);
+        let kind = header[156];
+        offset += 512;
+        match kind {
+            b'0' | b'\0' => {
+                let data = archive
+                    .get(offset..offset + size)
+                    .ok_or_else(|| anyhow!("truncated tar entry {name}"))?;
+                entries.insert(name, data.to_vec());
+                offset += size.div_ceil(512) * 512;
+            }
+            _ => {
+                offset += size.div_ceil(512) * 512;
+            }
+        }
+    }
+    Ok(entries)
+}
+
 pub fn verify_manifest_completeness(root: &Path, paths: &HashSet<PathBuf>) -> Result<()> {
     let mut pending = vec![root.to_path_buf()];
     let mut entries = 0_usize;
@@ -113,6 +194,8 @@ pub fn verify_manifest_completeness(root: &Path, paths: &HashSet<PathBuf>) -> Re
             let relative = entry.path().strip_prefix(root)?.to_path_buf();
             if relative != Path::new("artifact.json")
                 && relative != Path::new("SHA256SUMS")
+                && relative != Path::new("neuestar-probe-x86_64.tar.zst")
+                && relative != Path::new("neuestar-probe-x86_64.tar.zst.sha256")
                 && !paths.contains(&relative)
             {
                 bail!(
@@ -225,6 +308,94 @@ pub fn sha256_file(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outer_binding_missing_archive_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = verify_outer_binding(dir.path(), &"a".repeat(64)).unwrap_err();
+        assert!(
+            error.to_string().contains("outer archive missing"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn outer_binding_sha_mismatch_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let tarball = dir.path().join("neuestar-probe-x86_64.tar.zst");
+        std::fs::write(&tarball, b"not the right archive").unwrap();
+        let error = verify_outer_binding(dir.path(), &"a".repeat(64)).unwrap_err();
+        assert!(error.to_string().contains("SHA-256 mismatch"), "{error}");
+    }
+
+    #[test]
+    fn outer_binding_rejects_extracted_payload_mismatch() {
+        // A valid zstd tarball whose embedded artifact.json differs from the
+        // extracted one must be rejected (the C001/C002 combination).
+        let dir = tempfile::tempdir().unwrap();
+        // pre-encoded zstd tarball (embedded fixture) carrying artifact.json
+        // with probe_version 9.9.9
+        let tarball_bytes: Vec<u8> = vec![
+            40, 181, 47, 253, 100, 0, 39, 77, 5, 0, 146, 72, 29, 29, 96, 107, 30, 216, 199, 190,
+            247, 239, 68, 140, 241, 199, 12, 10, 1, 29, 224, 170, 162, 136, 76, 25, 213, 182, 142,
+            38, 41, 76, 1, 0, 196, 113, 30, 81, 8, 45, 82, 38, 202, 75, 229, 177, 183, 154, 215,
+            249, 107, 231, 27, 9, 133, 232, 154, 11, 6, 113, 31, 9, 42, 168, 96, 10, 36, 166, 153,
+            149, 74, 134, 65, 38, 13, 117, 146, 99, 191, 49, 31, 81, 153, 87, 124, 93, 132, 232,
+            63, 117, 177, 140, 118, 121, 183, 230, 125, 206, 238, 26, 51, 111, 189, 189, 184, 189,
+            102, 204, 49, 51, 47, 211, 212, 132, 122, 14, 191, 204, 135, 126, 17, 0, 239, 63, 186,
+            122, 232, 4, 42, 84, 3, 49, 87, 4, 185, 93, 99, 64, 121, 240, 226, 0, 121, 12, 6, 38,
+            239, 56, 80, 135, 6, 40, 27, 10, 15, 0, 205, 2, 32, 13, 192, 44, 96, 178, 98, 25, 51,
+            1, 37, 50, 220, 185, 88,
+        ];
+        let tarball = dir.path().join("neuestar-probe-x86_64.tar.zst");
+        std::fs::write(&tarball, &tarball_bytes).unwrap();
+        let outer_sha = sha256_file(&tarball).unwrap();
+        // extracted artifact.json disagrees with the archive's
+        std::fs::write(
+            dir.path().join("artifact.json"),
+            br#"{"probe_version":"0.1.0"}"#,
+        )
+        .unwrap();
+        let error = verify_outer_binding(dir.path(), &outer_sha).unwrap_err();
+        assert!(
+            error.to_string().contains("differs from the extracted"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn outer_binding_passes_when_archive_matches_extraction() {
+        let dir = tempfile::tempdir().unwrap();
+        // pre-encoded zstd tarball (embedded fixture) carrying the matching
+        // artifact.json + SHA256SUMS
+        let tarball_bytes: Vec<u8> = vec![
+            40, 181, 47, 253, 100, 0, 39, 21, 5, 0, 34, 136, 27, 27, 96, 75, 30, 216, 231, 66, 35,
+            119, 71, 223, 63, 206, 160, 52, 201, 16, 78, 94, 69, 90, 202, 33, 163, 32, 136, 128,
+            166, 0, 132, 210, 71, 144, 49, 11, 132, 137, 242, 80, 113, 203, 169, 150, 248, 17, 10,
+            175, 177, 36, 24, 60, 126, 156, 70, 9, 245, 9, 28, 57, 163, 173, 144, 97, 128, 201,
+            172, 244, 56, 248, 27, 241, 17, 86, 190, 226, 45, 27, 83, 255, 218, 5, 183, 225, 86,
+            206, 188, 185, 37, 231, 141, 245, 74, 204, 217, 85, 51, 231, 107, 181, 238, 110, 150,
+            211, 38, 208, 61, 252, 18, 111, 253, 17, 0, 239, 63, 186, 122, 232, 4, 42, 84, 3, 49,
+            87, 4, 185, 93, 99, 64, 37, 160, 195, 1, 242, 24, 12, 76, 222, 113, 160, 14, 13, 80,
+            54, 20, 30, 0, 154, 5, 64, 26, 128, 89, 192, 100, 197, 50, 102, 2, 74, 47, 206, 79,
+            100,
+        ];
+        let tarball = dir.path().join("neuestar-probe-x86_64.tar.zst");
+        std::fs::write(&tarball, &tarball_bytes).unwrap();
+        let outer_sha = sha256_file(&tarball).unwrap();
+        std::fs::write(
+            dir.path().join("artifact.json"),
+            br#"{"probe_version":"0.2.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("SHA256SUMS"),
+            b"deadbeef  ./app/probe
+",
+        )
+        .unwrap();
+        verify_outer_binding(dir.path(), &outer_sha).unwrap();
+    }
 
     #[test]
     fn sha256_validation_is_strict() {

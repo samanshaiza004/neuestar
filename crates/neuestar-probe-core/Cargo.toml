@@ -12,6 +12,7 @@ hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+ruzstd = "0.7"
 
 [dev-dependencies]
 tempfile.workspace = true

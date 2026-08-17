@@ -179,6 +179,23 @@ fn check_policy(record: &Value, violations: &mut Vec<Value>) {
         "helper-loc",
     );
 
+    // A2 first-party helper accounting: a recorded first-party-helper with
+    // helper_loc == 0 is a frozen-definition violation (helper LOC is
+    // first-party code only, and A2 installs the entry as first-party).
+    if record["candidate"] == "A2"
+        && burden["installed_files"].as_array().is_some_and(|files| {
+            files
+                .iter()
+                .any(|file| file["kind"] == "first-party-helper")
+        })
+        && burden["helper_loc"].as_u64().unwrap_or(0) == 0
+    {
+        violations.push(json!({
+            "stage": "threshold",
+            "code": "helper-loc-zero",
+            "message": "A2 records a first-party helper with helper_loc == 0 (frozen definition: helper LOC is first-party code only)",
+        }));
+    }
     if !burden["services"]
         .as_array()
         .is_none_or(|services| services.is_empty())

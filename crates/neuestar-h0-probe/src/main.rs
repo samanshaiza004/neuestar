@@ -79,6 +79,12 @@ struct Cli {
     #[arg(long)]
     carried_helper_sha256: Option<String>,
 
+    /// First-party helper source LOC (frozen definition: nonblank,
+    /// non-comment lines of first-party helper code; required > 0 for A2,
+    /// ceiling 2000 enforced by the checker).
+    #[arg(long, default_value_t = 0)]
+    helper_loc: u64,
+
     /// Candidate A1: integration package (deb) SHA-256.
     #[arg(long)]
     integration_package_sha256: Option<String>,
@@ -176,6 +182,11 @@ fn run(cli: &Cli) -> Result<u8> {
         {
             anyhow::bail!("A2 requires --carried-helper-sha256 (64 lowercase hex)");
         }
+        if is_a2 && cli.helper_loc == 0 {
+            anyhow::bail!(
+                "A2 requires --helper-loc (first-party helper source LOC, frozen definition)"
+            );
+        }
     }
 
     let report_parent = prepare_report_parent(&cli.report)?;
@@ -207,6 +218,26 @@ fn run(cli: &Cli) -> Result<u8> {
             return Ok(EXIT_OK);
         }
     };
+
+    // Bind the supplied outer archive identity to the extracted bytes
+    // (fail closed: mismatch or missing archive is an apparatus failure).
+    if let Err(error) = artifact::verify_outer_binding(&artifact_root, archive_sha256) {
+        write_apparatus_failure(
+            cli,
+            &host,
+            &security_state,
+            &timestamp,
+            &session_id,
+            &report_parent,
+            "outer-archive-binding",
+            &format!("{error:#}"),
+            false,
+            &[],
+            &parent_user_ns,
+            &parent_mount_ns,
+        )?;
+        return Ok(EXIT_OK);
+    }
 
     // A1/A2: verify the installed trust anchor (exact selected bytes,
     // root-owned, non-user-writable; A2 additionally requires the static
@@ -1125,7 +1156,7 @@ fn build_candidate_evidence(
                 patch_count: 0,
                 security_update_responsibility: "track upstream bubblewrap releases".to_owned(),
             }],
-            helper_loc: 0,
+            helper_loc: cli.helper_loc,
         },
         privileged_install_operations: if is_a2 {
             vec![

@@ -171,7 +171,8 @@ fn parse_args() -> Args {
 }
 
 /// Close every inherited file descriptor above 2 (hostile memfds, pipes,
-/// eventfds, sockets). Uses close_range when available, /proc scan otherwise.
+/// eventfds, sockets). FAIL CLOSED: close_range success OR the /proc
+/// fallback proving closure — otherwise abort. Never best-effort.
 fn close_inherited_fds() {
     // SAFETY: close_range(3, u32::MAX, 0) is a plain syscall on fd numbers;
     // it cannot affect memory or other processes.
@@ -179,16 +180,21 @@ fn close_inherited_fds() {
     if rc == 0 {
         return;
     }
-    if let Ok(entries) = std::fs::read_dir("/proc/self/fd") {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if let Ok(fd) = name.parse::<i32>() {
-                if fd > 2 {
-                    // SAFETY: closing our own fd numbers above the stdio set.
-                    unsafe {
-                        libc::close(fd);
-                    }
+    let entries = match std::fs::read_dir("/proc/self/fd") {
+        Ok(entries) => entries,
+        Err(error) => {
+            eprintln!("entry: cannot close inherited fds (close_range rc={rc}, /proc/self/fd: {error}); aborting");
+            exit(2);
+        }
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if let Ok(fd) = name.parse::<i32>() {
+            if fd > 2 {
+                // SAFETY: closing our own fd numbers above the stdio set.
+                unsafe {
+                    libc::close(fd);
                 }
             }
         }
@@ -319,9 +325,16 @@ fn main() {
     write_argv_evidence(&args, &argv);
 
     // Change to the artifact root (mirrors the frozen command's cwd) and
-    // exec bwrap-real through the secure-exec transition. exec() replaces
-    // this process; it only returns on failure.
-    let _ = std::env::set_current_dir(&args.artifact_root);
+    // exec bwrap-real through the secure-exec transition. FAIL CLOSED: if
+    // the artifact cwd cannot be established, abort before any exec. exec()
+    // replaces this process; it only returns on failure.
+    if let Err(error) = std::env::set_current_dir(&args.artifact_root) {
+        eprintln!(
+            "entry: cannot set cwd to {}: {error}; aborting",
+            args.artifact_root.display()
+        );
+        exit(2);
+    }
     let error = std::process::Command::new(BWRAP_REAL)
         .args(&argv[1..])
         .env_clear()

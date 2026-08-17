@@ -74,6 +74,20 @@ attempt nested userns + uid_map + mount + pivot_root inside the boundary:
   probe-verified), and no dynamic dependencies;
 - recorded in the H0 record (`trusted_helper.elf_interpreter == null`).
 
+## 8. Pre-exec tracer (ptrace falsifier)
+
+An unconfined attacker establishes tracing BEFORE the entry exec
+(PTRACE_TRACEME), traces through both execs (entry, then the Px transition
+into bwrap-real), and at the second exec stop reads the profile label and
+injects the concrete violation: `unshare(CLONE_NEWUSER)` then
+`write(/proc/self/uid_map)`.
+
+Acceptance: the traced process must NOT hold the setup profile — either the
+domain transition is withheld for the traced exec (observed: label stays
+`neuestar-entry (enforce)`, injected unshare denied with EACCES), or the
+tracer loses control. Any `uid_map=1` from the injected sequence is FAIL
+(rejects the specimen).
+
 ## 7. Mechanized record invariants
 
 The H0 record must carry (schema `neuestar.h0/v2`):
