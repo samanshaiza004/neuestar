@@ -216,8 +216,9 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "integration_source_sha256": {
+          "description": "Integration source commit (40-hex git SHA).",
           "type": ["string", "null"],
-          "pattern": "^[0-9a-f]{64}$"
+          "pattern": "^[0-9a-f]{40}$"
         },
         "security_policy_sha256": {
           "type": ["string", "null"],
@@ -666,7 +667,7 @@
             "required": ["neuestar_integration_package_sha256", "integration_source_sha256", "security_policy_sha256"],
             "properties": {
               "neuestar_integration_package_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-              "integration_source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "integration_source_sha256": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
               "security_policy_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             }
           },

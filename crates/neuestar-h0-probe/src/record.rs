@@ -35,13 +35,14 @@ pub enum Outcome {
 #[derive(Debug, Clone)]
 pub struct CandidateEvidence {
     pub candidate: &'static str,
+    pub helper_profile_label: String,
     pub integration_identity_sha256: String,
     pub neuestar_integration_package_sha256: String,
     pub integration_source_sha256: String,
     pub security_policy_sha256: String,
     pub trusted_helper: TrustedHelperEvidence,
     pub burden: BurdenEvidence,
-    pub privileged_install_operations: Vec<String>,
+    pub privileged_install_operations: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +160,9 @@ pub fn build(
             "helper_started": helper_started,
             "child_reached": child_reached,
         });
+        if let Some(evidence) = candidate {
+            value["helper_profile_label"] = json!(evidence.helper_profile_label);
+        }
         if let Some((user_ns, mount_ns)) = child_ns {
             value["child_user_namespace_id"] = json!(user_ns);
             value["child_mount_namespace_id"] = json!(mount_ns);

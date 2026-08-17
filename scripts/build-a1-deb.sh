@@ -115,7 +115,7 @@ mkdir -p "$OUT"
 printf '2.0\n' > "$STAGE/debian-binary"
 (
     cd "$STAGE"
-    tar -czf control.tar.gz --owner=0 --group=0 DEBIAN
+    tar -czf control.tar.gz --owner=0 --group=0 -C DEBIAN .
     tar -czf data.tar.gz --owner=0 --group=0 usr etc var
 )
 DEB="$OUT/neuestar-h0-a1_${VER}_amd64.deb"

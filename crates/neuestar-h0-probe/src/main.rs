@@ -40,12 +40,13 @@ const EXIT_APPARATUS: u8 = 2;
 #[command(version, about = "Run the H0 (Installed Substrate) PREFLIGHT probe")]
 struct Cli {
     /// Extracted frozen Campaign 002 artifact directory (read-only input).
+    /// Optional only because the internal H0.1S child mode needs no artifact.
     #[arg(long)]
-    artifact_root: PathBuf,
+    artifact_root: Option<PathBuf>,
 
     /// Frozen Campaign 002 outer archive SHA-256 (recorded as runtime identity).
     #[arg(long)]
-    archive_sha256: String,
+    archive_sha256: Option<String>,
 
     /// Where the neuestar.h0/v1 record is written.
     #[arg(long, default_value = "h0-report.json")]
@@ -53,7 +54,7 @@ struct Cli {
 
     /// ISO/snapshot date of the target profile (YYYY-MM-DD).
     #[arg(long)]
-    iso_snapshot_date: String,
+    iso_snapshot_date: Option<String>,
 
     /// Target configuration surface description.
     #[arg(long, default_value = "stock")]
@@ -120,16 +121,24 @@ fn run(cli: &Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
-    let artifact_root = cli.artifact_root.canonicalize().with_context(|| {
-        format!(
-            "failed to resolve artifact root {}",
-            cli.artifact_root.display()
-        )
-    })?;
-    if !neuestar_probe_core::artifact::valid_sha256(&cli.archive_sha256) {
+    let artifact_root = cli
+        .artifact_root
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("--artifact-root is required"))?
+        .canonicalize()
+        .context("failed to resolve artifact root")?;
+    let archive_sha256 = cli
+        .archive_sha256
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("--archive-sha256 is required"))?;
+    let iso_snapshot_date = cli
+        .iso_snapshot_date
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("--iso-snapshot-date is required"))?;
+    if !neuestar_probe_core::artifact::valid_sha256(archive_sha256) {
         anyhow::bail!("--archive-sha256 must be 64 lowercase hexadecimal characters");
     }
-    if !valid_iso_date(&cli.iso_snapshot_date) {
+    if !valid_iso_date(iso_snapshot_date) {
         anyhow::bail!("--iso-snapshot-date must be YYYY-MM-DD");
     }
     let is_a1 = cli.candidate == "A1";
@@ -270,7 +279,7 @@ fn run(cli: &Cli) -> Result<u8> {
     let mut command = contained_command(
         &report_parent,
         &artifact_root,
-        &cli.archive_sha256,
+        archive_sha256,
         &metadata,
         &helper,
         &child_exec,
@@ -408,12 +417,13 @@ fn run(cli: &Cli) -> Result<u8> {
     // the probe re-executes itself inside the SAME boundary to record the
     // child's profile label, CapEff raw+decoded, and namespace identity.
     let mut security_evidence = None;
+    let mut gates = gates;
     if is_a1 && child_reached {
         let probe_self = std::env::current_exe().context("failed to locate probe binary")?;
         let mut evidence_command = contained_command(
             &report_parent,
             &artifact_root,
-            &cli.archive_sha256,
+            archive_sha256,
             &metadata,
             &system_helper_invocation(&cli.helper_path),
             &security_evidence_child_exec(&probe_self),
@@ -430,9 +440,8 @@ fn run(cli: &Cli) -> Result<u8> {
                                 mask.unwrap_or(u64::MAX),
                             )
                             .is_empty();
-                        let h0_1s = if no_setup_caps { "pass" } else { "fail" };
+                        gates.h0_1s = if no_setup_caps { "pass" } else { "fail" };
                         security_evidence = Some(evidence);
-                        let _ = h0_1s;
                     }
                     Err(_) => {
                         write_apparatus_failure(
@@ -496,7 +505,7 @@ fn run(cli: &Cli) -> Result<u8> {
         host.kernel_release,
         host.architecture,
         host.lsm_raw,
-        cli.archive_sha256,
+        archive_sha256,
         report_parent.display()
     );
 
@@ -511,11 +520,11 @@ fn run(cli: &Cli) -> Result<u8> {
         &security_state,
         &timestamp,
         &session_id,
-        &cli.archive_sha256,
+        archive_sha256,
         &metadata.payload_manifest_sha256,
         &probe_sha256,
         &argv,
-        &cli.iso_snapshot_date,
+        iso_snapshot_date,
         &cli.config_surface,
         true,
         child_reached,
@@ -544,7 +553,7 @@ fn verify_a1_helper(cli: &Cli) -> Result<()> {
     let metadata = std::fs::metadata(&cli.helper_path)
         .with_context(|| format!("helper missing: {}", cli.helper_path.display()))?;
     let mode = metadata.mode();
-    if mode & 0o222 != 0 {
+    if mode & 0o022 != 0 {
         anyhow::bail!("helper is group/world-writable");
     }
     let actual = neuestar_probe_core::artifact::sha256_file(&cli.helper_path)?;
@@ -668,8 +677,15 @@ fn build_a1_evidence(
         });
     }
 
+    let helper_profile_label = state
+        .as_ref()
+        .and_then(|state| state.loaded_profiles.first())
+        .map(|profile| profile.name.clone())
+        .unwrap_or_else(|| "neuestar-bwrap".to_owned());
+
     Ok(CandidateEvidence {
         candidate: "A1",
+        helper_profile_label,
         integration_identity_sha256: cli
             .integration_package_sha256
             .clone()
@@ -703,8 +719,8 @@ fn build_a1_evidence(
             helper_loc: 0,
         },
         privileged_install_operations: vec![
-            "package-install".to_owned(),
-            "apparmor-policy-load".to_owned(),
+            serde_json::json!({"kind": "package-install", "description": "installed neuestar-h0-a1 deb (root-owned helper + AppArmor policy)"}),
+            serde_json::json!({"kind": "apparmor-policy-load", "description": "apparmor_parser -r /etc/apparmor.d/neuestar-bwrap; state recorded at /var/lib/neuestar/apparmor-state.json"}),
         ],
     })
 }
@@ -730,11 +746,11 @@ fn write_apparatus_failure(
         security_state,
         timestamp,
         session_id,
-        &cli.archive_sha256,
+        cli.archive_sha256.as_deref().unwrap_or("unverified"),
         "unverified",
         &sha256_self(),
         argv,
-        &cli.iso_snapshot_date,
+        cli.iso_snapshot_date.as_deref().unwrap_or("unknown"),
         &cli.config_surface,
         helper_started,
         false,
@@ -743,7 +759,7 @@ fn write_apparatus_failure(
         None,
         &format!(
             "artifact_outer_sha256={}\nreport_parent={}",
-            cli.archive_sha256,
+            cli.archive_sha256.as_deref().unwrap_or("unverified"),
             report_parent.display()
         ),
         &format!("probe_parent_user_ns={parent_user_ns}\nprobe_parent_mount_ns={parent_mount_ns}"),
