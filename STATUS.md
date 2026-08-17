@@ -29,7 +29,9 @@ Campaign 002 frozen specimen + outcome: [docs/CAMPAIGN-002.md](docs/CAMPAIGN-002
   stock NixOS 26.05; L0.0 FAIL on stock Ubuntu 26.04 (AppArmor denies
   unprivileged user-namespace uid-map setup — `bwrap: setting up uid map:
   Permission denied`). FULL-VM preflight only; physical cells pending.
-- L0.1: implemented for the minimal child, not run on Linux
+- L0.1: implemented for the minimal child; passed in the full-VM Campaign 002
+  run on stock NixOS 26.05 (controlled glibc 2.39, no host glibc import); not
+  run on physical Linux
 - L0.2: not implemented
 - L0.3: not implemented
 - L0.4: not run
@@ -37,31 +39,45 @@ Campaign 002 frozen specimen + outcome: [docs/CAMPAIGN-002.md](docs/CAMPAIGN-002
 
 ## Next falsifier
 
-Run the canonical build on Linux x86_64, publish exactly one archive/hash pair,
-then attempt ordinary-user L0.0/L0.1 on stock NixOS NVIDIA and Ubuntu NVIDIA
-Wayland/X11 hosts without preparation. Namespace denial is a valid failed
-result and must not be repaired. The immediate next falsifier is Campaign 002
-(minimum user+mount containment, corrected `/app` bind, bounded containment
-diagnostics) passing L0.0/L0.1 in the same two full VMs; physical execution
-starts only afterward. The full-VM lab established the only precondition the
-virtual environment can: the unchanged archive now passes preflight against a
-real logged-in Wayland session and fails inside namespace construction (exit 71)
-rather than at the display guard (exit 65). Implementation checks are not
-evidence that Linux user namespaces, bundled bubblewrap, controlled glibc,
-Vulkan, or presentation work on any physical matrix cell.
+The next falsifier is one confirmation run of the same frozen Campaign 002
+artifact (probe 0.2.0, outer a5773bc2…c10fe) on a stock bare-metal Ubuntu
+26.04 install as an ordinary user, expecting the same AppArmor uid-map denial
+(`bwrap: setting up uid map: Permission denied`). Ubuntu userns/AppArmor
+policy is a kernel/security-policy property, not a virtual-GPU property, so a
+physical Ubuntu reproduction is a confirmation run, not an open-ended
+investigation. NixOS is already demonstrated in the full VM and does not need
+physical priority. No L0.2/Vulkan work before the architecture decision that
+follows the confirmation:
+
+- preserve zero-preparation extraction as a hard requirement → if physical
+  Ubuntu reproduces the denial, move to the Vertical Native fallback
+  (predeclared in KILL-CONDITIONS); or
+- adopt an explicit small installation-time host-integration layer (distro
+  AppArmor/SELinux policy or distro bubblewrap integration) → this is
+  Campaign 003, a revised substrate hypothesis, not a fix to Campaign 002.
+
+Do not silently switch to the host `/usr/bin/bwrap` — that changes two frozen
+assumptions at once (bundled known helper → host dependency; arbitrary
+portable artifact → distro-provided execution infrastructure) and must be
+evaluated as a new hypothesis.
+
+Implementation checks are not evidence that Linux user namespaces, bundled
+bubblewrap, controlled glibc, Vulkan, or presentation work on any physical
+matrix cell.
 
 ## Unresolved risks
 
-- The canonical Campaign 001 Linux x86_64 artifact has been executed only
-  inside full VMs (Fedora Kinoite host, ordinary user `lab`) — never on
+- The canonical Campaign 001/002 Linux x86_64 artifacts have been executed
+  only inside full VMs (Fedora Kinoite host, ordinary user `lab`) — never on
   physical matrix hardware.
 - The hosted build workflow published the Campaign 001 artifact (Actions run
-  31951274008, canonical-artifact 9264713287); a Campaign 002 artifact is not
-  yet published.
-- Bundled bubblewrap executed as an ordinary user inside full VMs during
-  Campaign 001 and exposed two specimen defects (over-scoped netns;
-  read-only-root bind destination); a clean controlled-root launch under the
-  minimum L0 contract remains to be demonstrated by Campaign 002.
+  31951274008) and the Campaign 002 artifact (Actions run 31979454518,
+  artifact 9271952770, outer a5773bc2…c10fe, probe 0.2.0).
+- Bundled bubblewrap now executes cleanly under the minimum L0 contract in the
+  full-VM Campaign 002 run on stock NixOS 26.05 (L0.0/L0.1 pass); on stock
+  Ubuntu 26.04 the same artifact is denied at user-namespace uid-map setup by
+  AppArmor policy that Ubuntu grants only to system-integrated executables
+  such as `/usr/bin/bwrap` (see docs/CAMPAIGN-002.md).
 - Independent bit-for-bit reconstruction of the distribution-provided
   bubblewrap input remains unresolved; exact captured bytes are nevertheless
   part of the immutable payload identity.

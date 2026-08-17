@@ -94,10 +94,16 @@ runs. Ubuntu ran first; the specimen was not changed between guests.
   zero-preparation as an ordinary user in the full VM — L0.0/L0.1 pass with
   controlled glibc and no host-glibc import. First clean minimum-containment
   milestone.
-- **Ubuntu 26.04**: with the network-namespace over-scope removed, the minimum
-  contract fails at the user-namespace boundary itself: stock AppArmor
-  (`apparmor_restrict_unprivileged_userns=1`) denies the uid-map setup for an
-  unprofiled ordinary download. Recorded, not bypassed (KILL-CONDITIONS).
+- **Ubuntu 26.04**: stock Ubuntu 26.04 permits bubblewrap-style user-namespace
+  sandboxing through system-integrated AppArmor policy for known executables
+  such as `/usr/bin/bwrap` (the `bwrap-userns-restrict` profile shipped in
+  Ubuntu's AppArmor packaging, attached to `/usr/bin/bwrap`, granting `userns`,
+  `mount`, `umount`, `pivot_root` and then stacking a capability-denying child
+  profile), but Campaign 002's artifact-relative bundled bubblewrap
+  (`<artifact>/libexec/bwrap`) does not receive that permission. Under
+  Neuestar's frozen zero-preparation extracted-artifact contract, UID-map setup
+  is denied (`bwrap: setting up uid map: Permission denied`). Recorded, not
+  bypassed (KILL-CONDITIONS).
 - Both results are FULL-VM PREFLIGHT evidence, never physical Gate L0 evidence.
   Protocol: stopped on L0.0 failure with no guest repair; guests left as-is;
   identical specimen for both guests.
