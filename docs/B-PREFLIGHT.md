@@ -5,6 +5,17 @@ test of the hostile-loader class against the distro substrate), not the full
 frozen B campaign — no probe candidate-B records were produced; the B
 apparatus is not built. Execution in the same QEMU/KVM + libvirt VM as A1.
 
+## Execution context (caveat)
+
+The B runs happened in the same overlay where the A1 package was still
+installed — not a pristine stock Ubuntu. That does not invalidate the
+architectural conclusion: the A1 policy attaches to a different executable
+path (`/usr/libexec/neuestar/bwrap`), the attribution control shows the
+global userns restriction remained active (unconfined copy denied), and the
+authority was obtained specifically through the distro `/usr/bin/bwrap`
+path/profile. A fresh overlay would remove even that theoretical objection
+for publication-quality standalone B evidence; A2 is not blocked on it.
+
 ## What was tested
 
 Ubuntu 26.04 ships its own bwrap substrate:
@@ -92,8 +103,12 @@ authority and **before** any child stack-down.
   not a security differentiator.
 - The failure class now has a precise diagnosis: **no user-controlled
   executable code may run while the helper profile still owns setup
-  authority.** That is a property of the helper process itself (dynamic
-  loader + broad profile + lowercase transition), not of the policy file.
+  authority.** The bypass is not specific to Neuestar's policy content; it
+  arises from the tested helper/profile composition — a dynamically linked
+  helper receives namespace-setup authority before user-controlled loader
+  state has been neutralized. The broad permissions and the lowercase `pix`
+  transition are themselves policy properties; the composition (not any
+  single component) is what fails.
 - A2's prerequisite is met (A1 demonstrably failed), and the A2 design must
   ensure the helper cannot execute user-controlled code before setup — e.g.,
   a static helper (no dynamic loader), or an equivalent non-injectable

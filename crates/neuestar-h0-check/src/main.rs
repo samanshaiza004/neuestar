@@ -266,17 +266,10 @@ fn check_policy(record: &Value, violations: &mut Vec<Value>) {
     }
 
     // Candidate-specific policy (definitional constraints are schema-side;
-    // numeric/maintenance rules live here).
+    // numeric/maintenance rules live here). Note: A2 has no carried-component
+    // restriction beyond the frozen generic ceilings (<=1 carried, 0 local
+    // patches) — the freeze record does not impose a zero-carried rule on A2.
     match record["candidate"].as_str() {
-        Some("A2") => {
-            if carried.is_some_and(|components| !components.is_empty()) {
-                violations.push(json!({
-                    "stage": "threshold",
-                    "code": "a2-carried-components",
-                    "message": "A2 may not carry third-party components unless separately justified",
-                }));
-            }
-        }
         Some("none") | Some("B")
             if burden["installed_byte_count"].as_u64().unwrap_or(0) != 0
                 || burden["installed_file_count"].as_u64().unwrap_or(0) != 0
@@ -665,14 +658,15 @@ mod tests {
         r["burden"]["helper_loc"] = json!(2001);
         assert!(validate(&r).0);
         assert!(policy(&r).iter().any(|v| v["code"] == "helper-loc"));
-        // A2 carried component
+        // A2 may carry one unmodified third-party component (frozen generic
+        // ceilings: <=1 carried, 0 local patches) — no A2-specific zero rule.
         let mut r = base("A2", Some("s"), true, true);
         r["burden"]["carried_components"] =
             base("A1", Some("s"), true, true)["burden"]["carried_components"].clone();
         assert!(
+            validate(&r).0 && policy(&r).is_empty(),
+            "A2 with one unmodified carried component must be policy-valid: {:?}",
             policy(&r)
-                .iter()
-                .any(|v| v["code"] == "a2-carried-components")
         );
         // manifest-total mismatch
         let mut r = base("A1", Some("s"), true, true);
