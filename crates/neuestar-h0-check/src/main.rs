@@ -1,20 +1,25 @@
-//! `h0-check` — H0 checker: validates a `neuestar.h0/v1` record against the
-//! schema (structural validity) and against the frozen GATE-H0 /
-//! H0-KILL-CONDITIONS policy thresholds (admissibility). Verdict:
-//! PASS (0) / FAIL (1, policy violations, exactly representable) / INVALID
-//! (2, schema-invalid record).
+//! `h0-check` — H0 checker: validates a `neuestar.h0/v1` or `neuestar.h0/v2`
+//! record against its frozen schema (structural validity) and against the
+//! frozen GATE-H0 / H0-KILL-CONDITIONS policy thresholds (admissibility).
+//! Verdict: PASS (0) / FAIL (1, policy violations, exactly representable) /
+//! INVALID (2, schema-invalid record).
 //!
-//! The schema records reality; this checker decides whether that reality
-//! violates frozen policy. An over-threshold observation (9 MiB package,
-//! third-party repo, version pin, local patch, etc.) must therefore remain a
-//! valid record whose verdict is FAIL with the exact violation.
+//! Schema history: `neuestar.h0/v1` (schema/h0.v1.schema.json) is frozen and
+//! unchanged; `neuestar.h0/v2` (schema/h0.v2.schema.json) adds the post-H0.P
+//! mechanized H0.1S evidence (trusted_helper.regular_file,
+//! apparatus.security_evidence_argv). The schema records reality; this
+//! checker decides whether that reality violates frozen policy. An
+//! over-threshold observation (9 MiB package, third-party repo, version pin,
+//! local patch, etc.) must therefore remain a valid record whose verdict is
+//! FAIL with the exact violation.
 
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
-const SCHEMA: &str = include_str!("../../../schema/h0.schema.json");
+const SCHEMA_V1: &str = include_str!("../../../schema/h0.v1.schema.json");
+const SCHEMA_V2: &str = include_str!("../../../schema/h0.v2.schema.json");
 
 /// Frozen policy ceilings (GATE-H0 §8 / H0-KILL-CONDITIONS).
 const MAX_INSTALLED_BYTES: u64 = 8 * 1024 * 1024;
@@ -64,7 +69,27 @@ fn run(record_path: &std::path::Path) -> Result<u8> {
 }
 
 fn validate_schema(record: &Value, violations: &mut Vec<Value>) -> bool {
-    let schema: Value = serde_json::from_str(SCHEMA).expect("embedded schema is valid");
+    let schema_text = match record["schema"].as_str() {
+        Some("neuestar.h0/v1") => SCHEMA_V1,
+        Some("neuestar.h0/v2") => SCHEMA_V2,
+        Some(other) => {
+            violations.push(json!({
+                "stage": "schema",
+                "code": "unknown-schema-version",
+                "message": format!("unknown H0 record schema version: {other}"),
+            }));
+            return false;
+        }
+        None => {
+            violations.push(json!({
+                "stage": "schema",
+                "code": "missing-schema-version",
+                "message": "record lacks a schema version",
+            }));
+            return false;
+        }
+    };
+    let schema: Value = serde_json::from_str(schema_text).expect("embedded schema is valid");
     let validator = match jsonschema::validator_for(&schema) {
         Ok(validator) => validator,
         Err(error) => {
@@ -297,64 +322,69 @@ fn check_policy(record: &Value, violations: &mut Vec<Value>) {
                 ),
             }));
         }
-        // Static invariants (frozen H0.1S negative evidence): the helper must
-        // be root-owned, non-user-writable, with a non-user-writable parent,
-        // and the child must be under the restricted stacked profile.
-        let helper = &record["trusted_helper"];
-        if helper["uid"].as_u64() != Some(0) {
-            violations.push(json!({
-                "stage": "security-preservation",
-                "code": "h0.1s-helper-not-root-owned",
-                "message": "H0.1S pass with a non-root-owned trusted helper",
-            }));
-        }
-        if helper["regular_file"].as_bool() != Some(true) {
-            violations.push(json!({
-                "stage": "security-preservation",
-                "code": "h0.1s-helper-not-regular-file",
-                "message": "H0.1S pass without a regular-file trusted helper",
-            }));
-        }
-        if helper["mode"].as_u64().is_some_and(|mode| mode & 0o22 != 0) {
-            violations.push(json!({
-                "stage": "security-preservation",
-                "code": "h0.1s-helper-writable",
-                "message": "H0.1S pass with a group/world-writable trusted helper",
-            }));
-        }
-        if helper["parent_mount_writable_by_test_user"].as_bool() == Some(true) {
-            violations.push(json!({
-                "stage": "security-preservation",
-                "code": "h0.1s-helper-parent-writable",
-                "message": "H0.1S pass with a user-writable helper parent directory",
-            }));
-        }
-        let child_label = record["execution"]["child_profile_label"]
-            .as_str()
-            .unwrap_or("");
-        if !child_label.contains("unpriv") || child_label.contains("unconfined") {
-            violations.push(json!({
+        // Static invariants (frozen H0.1S negative evidence, mechanized in
+        // v2): the helper must be root-owned, non-user-writable, a regular
+        // file with a non-user-writable parent, the loaded enforce profile
+        // must attach to the expected path, and the child must be under the
+        // restricted stacked profile. v1 records predate the mechanization
+        // and are judged by the frozen v1 policy (capability evidence only).
+        if record["schema"] == "neuestar.h0/v2" {
+            let helper = &record["trusted_helper"];
+            if helper["uid"].as_u64() != Some(0) {
+                violations.push(json!({
+                    "stage": "security-preservation",
+                    "code": "h0.1s-helper-not-root-owned",
+                    "message": "H0.1S pass with a non-root-owned trusted helper",
+                }));
+            }
+            if helper["regular_file"].as_bool() != Some(true) {
+                violations.push(json!({
+                    "stage": "security-preservation",
+                    "code": "h0.1s-helper-not-regular-file",
+                    "message": "H0.1S pass without a regular-file trusted helper",
+                }));
+            }
+            if helper["mode"].as_u64().is_some_and(|mode| mode & 0o22 != 0) {
+                violations.push(json!({
+                    "stage": "security-preservation",
+                    "code": "h0.1s-helper-writable",
+                    "message": "H0.1S pass with a group/world-writable trusted helper",
+                }));
+            }
+            if helper["parent_mount_writable_by_test_user"].as_bool() == Some(true) {
+                violations.push(json!({
+                    "stage": "security-preservation",
+                    "code": "h0.1s-helper-parent-writable",
+                    "message": "H0.1S pass with a user-writable helper parent directory",
+                }));
+            }
+            let child_label = record["execution"]["child_profile_label"]
+                .as_str()
+                .unwrap_or("");
+            if !child_label.contains("unpriv") || child_label.contains("unconfined") {
+                violations.push(json!({
                 "stage": "security-preservation",
                 "code": "h0.1s-child-not-stacked",
                 "message": format!("H0.1S pass without the restricted stacked child label: {child_label}"),
             }));
-        }
-        let expected_path = helper["canonical_path"].as_str().unwrap_or("");
-        let attachment_ok = record["security_state"]["apparmor"]["loaded_profiles"]
-            .as_array()
-            .is_some_and(|profiles| {
-                profiles.iter().any(|profile| {
-                    profile["name"] == "neuestar-bwrap"
-                        && profile["mode"] == "enforce"
-                        && profile["path"].as_str() == Some(expected_path)
-                })
-            });
-        if !attachment_ok {
-            violations.push(json!({
-                "stage": "security-preservation",
-                "code": "h0.1s-helper-attachment-mismatch",
-                "message": format!("H0.1S pass without an enforce profile attached to {expected_path}"),
-            }));
+            }
+            let expected_path = helper["canonical_path"].as_str().unwrap_or("");
+            let attachment_ok = record["security_state"]["apparmor"]["loaded_profiles"]
+                .as_array()
+                .is_some_and(|profiles| {
+                    profiles.iter().any(|profile| {
+                        profile["name"] == "neuestar-bwrap"
+                            && profile["mode"] == "enforce"
+                            && profile["path"].as_str() == Some(expected_path)
+                    })
+                });
+            if !attachment_ok {
+                violations.push(json!({
+                    "stage": "security-preservation",
+                    "code": "h0.1s-helper-attachment-mismatch",
+                    "message": format!("H0.1S pass without an enforce profile attached to {expected_path}"),
+                }));
+            }
         }
     }
 }
@@ -425,6 +455,18 @@ mod tests {
         record["apparatus"]["security_evidence_argv"] = json!(["bwrap", "--security-evidence"]);
     }
 
+    /// Demote a v2 fixture to the frozen v1 shape (schema id and removal of
+    /// the post-H0.P mechanized fields).
+    fn as_v1(record: &mut Value) {
+        record["schema"] = json!("neuestar.h0/v1");
+        record["trusted_helper"]
+            .as_object_mut()
+            .map(|helper| helper.remove("regular_file"));
+        record["apparatus"]
+            .as_object_mut()
+            .map(|apparatus| apparatus.remove("security_evidence_argv"));
+    }
+
     fn base(
         candidate: &str,
         integration_shas: Option<&str>,
@@ -448,7 +490,7 @@ mod tests {
             Value::Null
         };
         json!({
-            "schema": "neuestar.h0/v1",
+            "schema": "neuestar.h0/v2",
             "attempt": {"timestamp": "2026-08-16T23:00:00Z", "phase": "h0-preflight", "integration_source_changed_since_previous": false},
             "host": {"distro_id": "ubuntu", "distro_version": "26.04", "kernel_release": "7.0.0-29-generic", "architecture": "x86_64",
                      "target_profile": {"iso_snapshot_date": "2026-08-01", "config_surface": "stock"}},
@@ -749,6 +791,87 @@ mod tests {
             json!("fail"),
             "baseline failure must record H0.0 as fail"
         );
+    }
+
+    #[test]
+    fn v1_records_validate_against_frozen_v1_schema() {
+        let mut record = base("A1", Some("x"), true, true);
+        add_security_evidence(&mut record);
+        as_v1(&mut record);
+        let (valid, violations) = validate(&record);
+        assert!(
+            valid,
+            "historical v1 A1 record shape must validate: {violations:?}"
+        );
+        let violations = policy(&record);
+        assert!(
+            violations.is_empty(),
+            "frozen v1 policy (capability evidence) must pass: {violations:?}"
+        );
+        let v1: Value = serde_json::from_str(SCHEMA_V1).unwrap();
+        assert!(
+            !v1["properties"]["trusted_helper"]["properties"]
+                .as_object()
+                .unwrap()
+                .contains_key("regular_file")
+        );
+        assert!(
+            !v1["properties"]["apparatus"]["properties"]
+                .as_object()
+                .unwrap()
+                .contains_key("security_evidence_argv")
+        );
+    }
+
+    #[test]
+    fn v1_records_reject_post_v1_fields() {
+        let mut record = base("A1", Some("x"), true, true);
+        as_v1(&mut record);
+        // v2-only fields smuggled into a record claiming v1.
+        record["trusted_helper"]["regular_file"] = json!(true);
+        record["apparatus"]["security_evidence_argv"] = json!(["bwrap", "--security-evidence"]);
+        let (valid, _) = validate(&record);
+        assert!(
+            !valid,
+            "a record claiming v1 with v2-only fields must be structurally invalid"
+        );
+    }
+
+    #[test]
+    fn v2_security_evidence_requires_argv() {
+        let mut record = base("A1", Some("x"), true, true);
+        add_security_evidence(&mut record);
+        record["apparatus"]
+            .as_object_mut()
+            .unwrap()
+            .remove("security_evidence_argv");
+        let (valid, violations) = validate(&record);
+        assert!(
+            !valid,
+            "v2 h0_1s pass without security_evidence_argv must be invalid: {violations:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_schema_version_is_invalid() {
+        let mut record = base("A1", Some("x"), true, true);
+        record["schema"] = json!("neuestar.h0/v3");
+        let (valid, violations) = validate(&record);
+        assert!(!valid);
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation["code"] == "unknown-schema-version")
+        );
+    }
+
+    #[test]
+    fn h0p_v1_records_validate_without_trusted_helper() {
+        let mut record = base("none", None, false, true);
+        as_v1(&mut record);
+        let (valid, violations) = validate(&record);
+        assert!(valid, "H0.P v1 record must validate: {violations:?}");
+        assert!(policy(&record).is_empty());
     }
 
     #[test]

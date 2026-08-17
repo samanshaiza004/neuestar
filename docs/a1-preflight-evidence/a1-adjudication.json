@@ -1,0 +1,22 @@
+{
+  "schema": "neuestar.h0.adjudication/v1",
+  "raw_record_sha256": "a16f4f6ce92ad18ee347639876249af5745f1d0e4a3a2a9808cdc1d35cdcc73d",
+  "candidate": "A1",
+  "raw_machine_verdict": {
+    "h0_1": "pass",
+    "h0_1s": "pass"
+  },
+  "adjudicated_verdict": {
+    "h0_1": "pass",
+    "h0_1s": "fail"
+  },
+  "reason": "hostile-loader-namespace-bypass",
+  "evidence_manifest_sha256": "ad199f3d6da883fd2ce6b939ed67955e9b6a3aa7d69fc188787b2df85b8404a5",
+  "failing_observation": {
+    "unshare": true,
+    "uid_map": true,
+    "mount": false,
+    "pivot_root": false
+  },
+  "adjudicated_at": "2026-08-17T00:00:00Z"
+}

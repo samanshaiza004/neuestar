@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use crate::child::ChildEvidence;
 use crate::host::{HostFacts, SecurityState};
 
-pub const H0_SCHEMA: &str = "neuestar.h0/v1";
+pub const H0_SCHEMA: &str = "neuestar.h0/v2";
 
 /// The attempt outcome. Apparatus failures (before or around containment)
 /// must not be recorded as a failed gate: gates only describe what actually

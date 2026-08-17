@@ -39,7 +39,7 @@ L0 and never changes any Campaign 002 statement.
 
 ## Next steps (execution order)
 
-1. Build the `neuestar.h0/v1` evidence schema (schema/h0.schema.json) — review
+1. Build the `neuestar.h0/v1` evidence schema (schema/h0.v1.schema.json, frozen; schema/h0.v2.schema.json is the post-H0.P mechanized revision) — review
    before the probe.
 2. Build the minimal H0 probe.
 3. H0.P probe equivalence (Ubuntu 26.04 boundary failure; NixOS 26.05 minimum
@@ -57,7 +57,7 @@ L0 and never changes any Campaign 002 statement.
   libc) and no display/GPU preflight. The dedicated security-evidence
   invocation (CapEff raw+decoded, profile labels) is reserved for H0.1S and is
   structurally required only when `gates.h0_1s` is evaluated — never for H0.P
-  (schema revision in `schema/h0.schema.json`).
+  (schema revision in `schema/h0.v1.schema.json` / `schema/h0.v2.schema.json`).
 - **AppArmor evidence honesty**: `abi` is recorded only when observable
   (optional in schema); `loaded_profile_state_sha256` is an observational
   digest over the sorted `name (mode)` profile list plus parser version — it
