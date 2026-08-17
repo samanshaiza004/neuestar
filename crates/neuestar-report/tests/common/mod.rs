@@ -8,6 +8,7 @@ use neuestar_report::{
     SchemaVersion, VendorSpecificRule,
 };
 
+#[allow(clippy::too_many_lines)]
 pub fn clean_report() -> Report {
     Report {
         schema: SchemaVersion::V1,
@@ -42,6 +43,8 @@ pub fn clean_report() -> Report {
             errno: None,
             host_paths_exposed: Vec::new(),
             forbidden_preparation: Vec::new(),
+            substage: None,
+            helper_stderr: None,
         },
         runtime: RuntimeEvidence {
             libc_source: LibcSource::Controlled,

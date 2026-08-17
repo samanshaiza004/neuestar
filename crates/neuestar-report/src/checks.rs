@@ -312,6 +312,11 @@ fn validate_containment(containment: &ContainmentEvidence) -> Result<(), ReportE
             512,
         )?;
     }
+    optional_bounded(
+        containment.helper_stderr.as_deref(),
+        "containment.helper_stderr",
+        4096,
+    )?;
     bounded_array(
         &containment.host_paths_exposed,
         "containment.host_paths_exposed",

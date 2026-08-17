@@ -58,6 +58,23 @@ fn schema_enforces_gate_states_classification_and_rule_caps() {
 }
 
 #[test]
+fn schema_declares_containment_substage_and_bounded_helper_stderr() {
+    let root: Value = serde_json::from_str(SCHEMA).unwrap();
+    let containment = &root["$defs"]["containmentEvidence"]["properties"];
+    assert_eq!(
+        containment["substage"]["enum"],
+        json!([
+            "helper-preflight",
+            "helper-execution",
+            "child-result-missing",
+            "child-launch"
+        ])
+    );
+    assert_eq!(containment["helper_stderr"]["minLength"], json!(1));
+    assert_eq!(containment["helper_stderr"]["maxLength"], json!(4096));
+}
+
+#[test]
 fn schema_shape_matches_serialized_fixtures() {
     let root: Value = serde_json::from_str(SCHEMA).unwrap();
     let fixtures = [

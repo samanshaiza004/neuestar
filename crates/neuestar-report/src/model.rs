@@ -229,6 +229,25 @@ pub struct ObservedHost {
     pub desktop_session: Option<String>,
 }
 
+/// Where containment failed, when Neuestar can establish it without
+/// interpreting bubblewrap-internal output. These values are derived only from
+/// evidence Neuestar controls (helper start, helper exit status, child result
+/// presence); they are never inferred by string-matching helper stderr.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ContainmentSubstage {
+    /// The bundled helper could not be started (spawn/exec failed).
+    HelperPreflight,
+    /// The bundled helper ran but exited unsuccessfully before the child
+    /// produced a result; the exact point is not further attributed.
+    HelperExecution,
+    /// The helper exited successfully but no child result was produced.
+    ChildResultMissing,
+    /// The child executed and produced a result that was not a successful
+    /// controlled result.
+    ChildLaunch,
+}
+
 /// Evidence for L0.0 namespace construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -254,6 +273,13 @@ pub struct ContainmentEvidence {
     /// Forbidden preparation actions that were actually attempted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forbidden_preparation: Vec<ForbiddenPreparation>,
+    /// Where containment failed, when determinable without helper-internal
+    /// string parsing. Absent when containment never ran or succeeded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub substage: Option<ContainmentSubstage>,
+    /// Bounded stderr captured from the bundled helper on failure, verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helper_stderr: Option<String>,
 }
 
 /// One recorded forbidden preparation action.

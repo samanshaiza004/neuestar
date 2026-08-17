@@ -26,6 +26,24 @@ fn conditional_pass_with_host_glibc_is_valid() {
 }
 
 #[test]
+fn containment_substage_and_helper_stderr_round_trip_in_reports() {
+    let mut report: Report =
+        serde_json::from_str(include_str!("fixtures/fail_containment.json")).unwrap();
+    report.containment.substage = Some(neuestar_report::ContainmentSubstage::HelperExecution);
+    report.containment.helper_stderr =
+        Some("bwrap: Can't create file at /app/probe: Read-only file system".to_owned());
+    assert!(report.validate().is_ok());
+    let value = serde_json::to_value(&report).unwrap();
+    assert_eq!(value["containment"]["substage"], json!("helper-execution"));
+    assert_eq!(
+        value["containment"]["helper_stderr"],
+        json!("bwrap: Can't create file at /app/probe: Read-only file system")
+    );
+    let decoded: Report = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&decoded).unwrap(), value);
+}
+
+#[test]
 fn host_glibc_cannot_be_clean_pass() {
     let mut report = clean_report();
     report.runtime.libc_source = LibcSource::HostGlibc;

@@ -213,6 +213,15 @@
           "items": {
             "$ref": "#/$defs/forbiddenPreparation"
           }
+        },
+        "substage": {
+          "type": "string",
+          "enum": ["helper-preflight", "helper-execution", "child-result-missing", "child-launch"]
+        },
+        "helper_stderr": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
         }
       }
     },

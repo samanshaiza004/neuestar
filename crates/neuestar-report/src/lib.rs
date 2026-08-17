@@ -14,10 +14,11 @@ pub use aggregate::{CampaignError, validate as validate_campaign};
 pub use checks::{ReportError, validate as validate_report};
 pub use model::{
     Artifact, Campaign, CampaignCell, CaptureEvidence, Classification, ContainmentEvidence,
-    DisplayServer, Distro, DistroSpecificRule, FailureStage, ForbiddenPreparation,
-    ForbiddenPreparationKind, GateResults, GateState, GpuVendor, GraphicsEvidence, LibcSource,
-    MatrixCell, ObservedHost, PresentationEvidence, PresentationTimings, RendererKind, Report,
-    RuntimeEvidence, SchemaVersion, StructuredFailure, VendorSpecificRule,
+    ContainmentSubstage, DisplayServer, Distro, DistroSpecificRule, FailureStage,
+    ForbiddenPreparation, ForbiddenPreparationKind, GateResults, GateState, GpuVendor,
+    GraphicsEvidence, LibcSource, MatrixCell, ObservedHost, PresentationEvidence,
+    PresentationTimings, RendererKind, Report, RuntimeEvidence, SchemaVersion, StructuredFailure,
+    VendorSpecificRule,
 };
 
 /// Current report schema identifier.

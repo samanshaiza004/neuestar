@@ -27,7 +27,9 @@
         "kind": "sudo",
         "description": "runner used sudo to install an AppArmor profile"
       }
-    ]
+    ],
+    "substage": "helper-execution",
+    "helper_stderr": "bwrap: Can't create file at /app/probe: Read-only file system"
   },
   "runtime": {
     "libc_source": "not-determined",
