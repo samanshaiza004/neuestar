@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "crates/neuestar-elf",
+  "crates/neuestar-entry",
   "crates/neuestar-h0-check",
   "crates/neuestar-h0-probe",
   "crates/neuestar-host-inspect",
@@ -40,3 +41,9 @@ missing_docs = "warn"
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"

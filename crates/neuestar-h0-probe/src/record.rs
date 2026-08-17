@@ -34,7 +34,7 @@ pub enum Outcome {
 /// Candidate-specific evidence (Candidate A1; absent for candidate none).
 #[derive(Debug, Clone)]
 pub struct CandidateEvidence {
-    pub candidate: &'static str,
+    pub candidate: String,
     pub helper_profile_label: String,
     pub integration_identity_sha256: String,
     pub neuestar_integration_package_sha256: String,
@@ -53,6 +53,9 @@ pub struct TrustedHelperEvidence {
     pub gid: u32,
     pub mode: u32,
     pub regular_file: bool,
+    /// ELF interpreter (PT_INTERP) of the trusted helper, or None when it is
+    /// statically linked (A2 static-property evidence).
+    pub elf_interpreter: Option<String>,
     pub parent_mount_writable_by_test_user: bool,
 }
 
@@ -116,6 +119,8 @@ pub fn build(
     probe_sha256: &str,
     containment_argv: &[String],
     security_evidence_argv: &[String],
+    constructed_bwrap_argv: &[String],
+    constructed_bwrap_argv_evidence: &[String],
     iso_snapshot_date: &str,
     config_surface: &str,
     helper_started: bool,
@@ -186,7 +191,7 @@ pub fn build(
 
     let (candidate_name, integration, trusted_helper, burden, privileged_ops) = match candidate {
         Some(evidence) => (
-            evidence.candidate,
+            evidence.candidate.clone(),
             json!({
                 "integration_identity_sha256": evidence.integration_identity_sha256,
                 "neuestar_integration_package_sha256": evidence.neuestar_integration_package_sha256,
@@ -200,6 +205,7 @@ pub fn build(
                 "gid": evidence.trusted_helper.gid,
                 "mode": evidence.trusted_helper.mode,
                 "regular_file": evidence.trusted_helper.regular_file,
+                "elf_interpreter": evidence.trusted_helper.elf_interpreter,
                 "parent_mount_writable_by_test_user": evidence.trusted_helper.parent_mount_writable_by_test_user,
             }),
             json!({
@@ -233,7 +239,7 @@ pub fn build(
             evidence.privileged_install_operations.clone(),
         ),
         None => (
-            "none",
+            "none".to_owned(),
             json!({
                 "integration_identity_sha256": sha256_hex(""),
                 "neuestar_integration_package_sha256": null,
@@ -314,6 +320,13 @@ pub fn build(
     });
     if !security_evidence_argv.is_empty() {
         record["apparatus"]["security_evidence_argv"] = json!(security_evidence_argv);
+    }
+    if !constructed_bwrap_argv.is_empty() {
+        record["apparatus"]["constructed_bwrap_argv"] = json!(constructed_bwrap_argv);
+    }
+    if !constructed_bwrap_argv_evidence.is_empty() {
+        record["apparatus"]["constructed_bwrap_argv_evidence"] =
+            json!(constructed_bwrap_argv_evidence);
     }
     if let Some(failure) = failure {
         record["failure"] = failure;

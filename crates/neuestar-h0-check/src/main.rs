@@ -361,6 +361,15 @@ fn check_policy(record: &Value, violations: &mut Vec<Value>) {
                 "message": format!("H0.1S pass without the restricted stacked child label: {child_label}"),
             }));
             }
+            // A2 static-property evidence: the trust anchor must have no
+            // ELF interpreter (no dynamic loader → no loader injection).
+            if record["candidate"] == "A2" && helper["elf_interpreter"].as_str().is_some() {
+                violations.push(json!({
+                    "stage": "security-preservation",
+                    "code": "h0.1s-entry-not-static",
+                    "message": "A2 H0.1S pass with an ELF interpreter on the trusted entry (loader injection class)",
+                }));
+            }
             let expected_path = helper["canonical_path"].as_str().unwrap_or("");
             let attachment_ok = record["security_state"]["apparmor"]["loaded_profiles"]
                 .as_array()
@@ -455,9 +464,15 @@ mod tests {
         record["trusted_helper"]
             .as_object_mut()
             .map(|helper| helper.remove("regular_file"));
+        record["trusted_helper"]
+            .as_object_mut()
+            .map(|helper| helper.remove("elf_interpreter"));
         record["apparatus"]
             .as_object_mut()
             .map(|apparatus| apparatus.remove("security_evidence_argv"));
+        record["apparatus"]
+            .as_object_mut()
+            .map(|apparatus| apparatus.remove("constructed_bwrap_argv"));
     }
 
     fn base(
@@ -494,7 +509,7 @@ mod tests {
                             "integration_source_sha256": source_sha,
                             "security_policy_sha256": sha},
             "trusted_helper": if trusted {
-                json!({"canonical_path": "/usr/libexec/neuestar/bwrap", "sha256": S, "uid": 0, "gid": 0, "mode": 493, "regular_file": true, "parent_mount_writable_by_test_user": false})
+                json!({"canonical_path": "/usr/libexec/neuestar/bwrap", "sha256": S, "uid": 0, "gid": 0, "mode": 493, "regular_file": true, "elf_interpreter": if candidate == "A2" { Value::Null } else { json!("A2-static-evidence") }, "parent_mount_writable_by_test_user": false})
             } else {
                 Value::Null
             },
@@ -506,7 +521,8 @@ mod tests {
                        "carried_components": carried, "helper_loc": 0},
             "privileged_install_operations": [],
             "execution": execution_value(child_reached),
-            "apparatus": {"probe_sha256": S, "containment_argv": ["bwrap", "--unshare-user"]},
+            "apparatus": {"probe_sha256": S, "containment_argv": ["bwrap", "--unshare-user"],
+                           "constructed_bwrap_argv": if candidate == "A2" { json!(["bwrap-real", "--unshare-user"]) } else { json!([]) }},
             "gates": {"h0_0": "pass", "h0_1": "not-run", "h0_1s": "not-run", "h0_2a": "not-run", "h0_2b": "not-run",
                       "h0_3": "not-run", "h0_4": "not-run", "h0_4r": "not-run", "h0_5": "not-run", "h0_6": "not-run", "h0_p": "not-run"},
             "classification": "pass",

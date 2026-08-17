@@ -60,17 +60,24 @@ struct Cli {
     #[arg(long, default_value = "stock")]
     config_surface: String,
 
-    /// Candidate under test: none (H0.P) or A1 (installed root-owned helper).
-    #[arg(long, default_value = "none", value_parser = ["none", "A1"])]
+    /// Candidate under test: none (H0.P), A1 (installed root-owned helper),
+    /// or A2 (static privilege-entry gate + private bwrap-real).
+    #[arg(long, default_value = "none", value_parser = ["none", "A1", "A2"])]
     candidate: String,
 
-    /// Candidate A1: installed root-owned helper path.
+    /// Candidate A1/A2: installed root-owned helper path (the trust anchor:
+    /// bwrap for A1, the static entry for A2).
     #[arg(long, default_value = "/usr/libexec/neuestar/bwrap")]
     helper_path: PathBuf,
 
-    /// Candidate A1: expected helper SHA-256 (exact selected upstream bytes).
+    /// Candidate A1/A2: expected helper SHA-256 (exact selected bytes).
     #[arg(long)]
     expected_helper_sha256: Option<String>,
+
+    /// Candidate A2: expected SHA-256 of the private bwrap-real carried
+    /// component (exact pinned upstream bytes, zero patches).
+    #[arg(long)]
+    carried_helper_sha256: Option<String>,
 
     /// Candidate A1: integration package (deb) SHA-256.
     #[arg(long)]
@@ -142,20 +149,32 @@ fn run(cli: &Cli) -> Result<u8> {
         anyhow::bail!("--iso-snapshot-date must be YYYY-MM-DD");
     }
     let is_a1 = cli.candidate == "A1";
-    if is_a1 {
+    let is_a2 = cli.candidate == "A2";
+    let cli_candidate = cli.candidate.as_str();
+    if is_a1 || is_a2 {
         if cli
             .expected_helper_sha256
             .as_deref()
             .is_none_or(|sha| !neuestar_probe_core::artifact::valid_sha256(sha))
         {
-            anyhow::bail!("A1 requires --expected-helper-sha256 (64 lowercase hex)");
+            anyhow::bail!("{cli_candidate} requires --expected-helper-sha256 (64 lowercase hex)");
         }
         if cli
             .integration_package_sha256
             .as_deref()
             .is_none_or(|sha| !neuestar_probe_core::artifact::valid_sha256(sha))
         {
-            anyhow::bail!("A1 requires --integration-package-sha256 (64 lowercase hex)");
+            anyhow::bail!(
+                "{cli_candidate} requires --integration-package-sha256 (64 lowercase hex)"
+            );
+        }
+        if is_a2
+            && cli
+                .carried_helper_sha256
+                .as_deref()
+                .is_none_or(|sha| !neuestar_probe_core::artifact::valid_sha256(sha))
+        {
+            anyhow::bail!("A2 requires --carried-helper-sha256 (64 lowercase hex)");
         }
     }
 
@@ -189,10 +208,17 @@ fn run(cli: &Cli) -> Result<u8> {
         }
     };
 
-    // A1: verify the installed root-owned helper (exact selected bytes,
-    // non-user-writable) instead of the artifact-bundled helper closure.
-    if is_a1 {
-        if let Err(error) = verify_a1_helper(cli) {
+    // A1/A2: verify the installed trust anchor (exact selected bytes,
+    // root-owned, non-user-writable; A2 additionally requires the static
+    // entry property and the pinned carried bwrap-real) instead of the
+    // artifact-bundled helper closure.
+    if is_a1 || is_a2 {
+        let verified = if is_a2 {
+            verify_a2_entry(cli)
+        } else {
+            verify_a1_helper(cli)
+        };
+        if let Err(error) = verified {
             write_apparatus_failure(
                 cli,
                 &host,
@@ -200,7 +226,7 @@ fn run(cli: &Cli) -> Result<u8> {
                 &timestamp,
                 &session_id,
                 &report_parent,
-                "a1-helper-verification",
+                "helper-verification",
                 &format!("{error:#}"),
                 false,
                 &[],
@@ -250,13 +276,14 @@ fn run(cli: &Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
-    // A1: merge install-time AppArmor state (positive profile-loading evidence).
-    let a1_state = if is_a1 {
+    // A1/A2: merge install-time AppArmor state (positive profile-loading
+    // evidence).
+    let a1_state = if is_a1 || is_a2 {
         read_apparmor_state(&cli.apparmor_state).ok()
     } else {
         None
     };
-    if let (true, Some(state)) = (is_a1, &a1_state) {
+    if let (true, Some(state)) = (is_a1 || is_a2, &a1_state) {
         security_state.apparmor = Some(AppArmorState {
             parser_version: state.parser_version.clone(),
             abi: None,
@@ -270,20 +297,31 @@ fn run(cli: &Cli) -> Result<u8> {
     }
 
     let probe_sha256 = sha256_self();
-    let helper = if is_a1 {
-        system_helper_invocation(&cli.helper_path)
+    let mut command = if is_a2 {
+        entry_invocation(
+            cli,
+            &artifact_root,
+            &report_parent,
+            archive_sha256,
+            &metadata,
+            false,
+            None,
+        )
     } else {
-        frozen_helper_invocation(&artifact_root)
+        let helper = if is_a1 {
+            system_helper_invocation(&cli.helper_path)
+        } else {
+            frozen_helper_invocation(&artifact_root)
+        };
+        contained_command(
+            &report_parent,
+            &artifact_root,
+            archive_sha256,
+            &metadata,
+            &helper,
+            &frozen_child_exec(),
+        )
     };
-    let child_exec = frozen_child_exec();
-    let mut command = contained_command(
-        &report_parent,
-        &artifact_root,
-        archive_sha256,
-        &metadata,
-        &helper,
-        &child_exec,
-    );
     let argv: Vec<String> = command
         .get_args()
         .map(|argument| argument.to_string_lossy().into_owned())
@@ -340,7 +378,7 @@ fn run(cli: &Cli) -> Result<u8> {
             valid_successful_child_result(result, &parent_user_ns, &parent_mount_ns)
         });
 
-    let (outcome, gates) = if is_a1 {
+    let (outcome, gates) = if is_a1 || is_a2 {
         if success {
             (
                 Outcome::Pass,
@@ -413,28 +451,160 @@ fn run(cli: &Cli) -> Result<u8> {
         .as_ref()
         .is_some_and(|result| result.contained && result.launch_reached_main);
 
-    // H0.1S security-evidence invocation (A1 only, after the outcome run):
+    // A2: the entry wrote the bwrap argv it constructed; verify it matches
+    // the frozen command shape exactly (drift guard: entry and probe-core
+    // must agree on the operation).
+    let mut constructed_bwrap_argv: Vec<String> = Vec::new();
+    let mut constructed_bwrap_argv_evidence: Vec<String> = Vec::new();
+    if is_a2 && child_reached {
+        let expected_command = contained_command(
+            &report_parent,
+            &artifact_root,
+            archive_sha256,
+            &metadata,
+            &system_helper_invocation(std::path::Path::new(BWRAP_REAL)),
+            &frozen_child_exec(),
+        );
+        let expected: Vec<String> = expected_command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        match read_entry_argv(&report_parent.join(".entry-argv.json")) {
+            Ok(constructed) if constructed.get(1..) == Some(expected.as_slice()) => {
+                constructed_bwrap_argv = constructed;
+            }
+            Ok(constructed) => {
+                write_apparatus_failure(
+                    cli,
+                    &host,
+                    &security_state,
+                    &timestamp,
+                    &session_id,
+                    &report_parent,
+                    "entry-argv-mismatch",
+                    &format!(
+                        "entry constructed bwrap argv diverges from the frozen command shape ({} vs {} args)",
+                        constructed.len(),
+                        expected.len() + 1
+                    ),
+                    true,
+                    &argv,
+                    &parent_user_ns,
+                    &parent_mount_ns,
+                )?;
+                return Ok(EXIT_OK);
+            }
+            Err(error) => {
+                write_apparatus_failure(
+                    cli,
+                    &host,
+                    &security_state,
+                    &timestamp,
+                    &session_id,
+                    &report_parent,
+                    "entry-argv-unreadable",
+                    &format!("{error:#}"),
+                    true,
+                    &argv,
+                    &parent_user_ns,
+                    &parent_mount_ns,
+                )?;
+                return Ok(EXIT_OK);
+            }
+        }
+    }
+
+    // H0.1S security-evidence invocation (A1/A2, after the outcome run):
     // the probe re-executes itself inside the SAME boundary to record the
     // child's profile label, CapEff raw+decoded, and namespace identity.
     let mut security_evidence = None;
     let mut security_evidence_argv: Vec<String> = Vec::new();
     let mut gates = gates;
-    if is_a1 && child_reached {
+    if (is_a1 || is_a2) && child_reached {
         let probe_self = std::env::current_exe().context("failed to locate probe binary")?;
-        let mut evidence_command = contained_command(
-            &report_parent,
-            &artifact_root,
-            archive_sha256,
-            &metadata,
-            &system_helper_invocation(&cli.helper_path),
-            &security_evidence_child_exec(&probe_self),
-        );
+        let mut evidence_command = if is_a2 {
+            entry_invocation(
+                cli,
+                &artifact_root,
+                &report_parent,
+                archive_sha256,
+                &metadata,
+                true,
+                Some(&probe_self),
+            )
+        } else {
+            contained_command(
+                &report_parent,
+                &artifact_root,
+                archive_sha256,
+                &metadata,
+                &system_helper_invocation(&cli.helper_path),
+                &security_evidence_child_exec(&probe_self),
+            )
+        };
         security_evidence_argv = evidence_command
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect();
         match run_contained(&mut evidence_command) {
             Ok(evidence_run) if evidence_run.status == Some(0) => {
+                if is_a2 {
+                    let expected_command = contained_command(
+                        &report_parent,
+                        &artifact_root,
+                        archive_sha256,
+                        &metadata,
+                        &system_helper_invocation(std::path::Path::new(BWRAP_REAL)),
+                        &security_evidence_child_exec(&probe_self),
+                    );
+                    let expected: Vec<String> = expected_command
+                        .get_args()
+                        .map(|argument| argument.to_string_lossy().into_owned())
+                        .collect();
+                    match read_entry_argv(&report_parent.join(".entry-argv-evidence.json")) {
+                        Ok(constructed) if constructed.get(1..) == Some(expected.as_slice()) => {
+                            constructed_bwrap_argv_evidence = constructed;
+                        }
+                        Ok(constructed) => {
+                            write_apparatus_failure(
+                                cli,
+                                &host,
+                                &security_state,
+                                &timestamp,
+                                &session_id,
+                                &report_parent,
+                                "entry-argv-mismatch",
+                                &format!(
+                                    "entry constructed evidence argv diverges from the frozen shape ({} vs {} args)",
+                                    constructed.len(),
+                                    expected.len() + 1
+                                ),
+                                true,
+                                &argv,
+                                &parent_user_ns,
+                                &parent_mount_ns,
+                            )?;
+                            return Ok(EXIT_OK);
+                        }
+                        Err(error) => {
+                            write_apparatus_failure(
+                                cli,
+                                &host,
+                                &security_state,
+                                &timestamp,
+                                &session_id,
+                                &report_parent,
+                                "entry-argv-unreadable",
+                                &format!("{error:#}"),
+                                true,
+                                &argv,
+                                &parent_user_ns,
+                                &parent_mount_ns,
+                            )?;
+                            return Ok(EXIT_OK);
+                        }
+                    }
+                }
                 match read_child_evidence(&report_parent.join("h0-child-evidence.json")) {
                     Ok(evidence) => {
                         let mask = neuestar_probe_core::capabilities::parse_cap_eff_hex(
@@ -453,9 +623,14 @@ fn run(cli: &Cli) -> Result<u8> {
                             .unwrap_or_else(|_| cli.helper_path.clone())
                             .display()
                             .to_string();
+                        let trust_profile = if is_a2 {
+                            "neuestar-entry"
+                        } else {
+                            "neuestar-bwrap"
+                        };
                         let attachment_ok = a1_state.as_ref().is_some_and(|state| {
                             state.loaded_profiles.iter().any(|profile| {
-                                profile.name == "neuestar-bwrap"
+                                profile.name == trust_profile
                                     && profile.mode == "enforce"
                                     && profile.path.as_deref()
                                         == Some(expected_helper_path.as_str())
@@ -534,8 +709,8 @@ fn run(cli: &Cli) -> Result<u8> {
         report_parent.display()
     );
 
-    let candidate_evidence = if is_a1 {
-        Some(build_a1_evidence(cli, &a1_state, &child_result)?)
+    let candidate_evidence = if is_a1 || is_a2 {
+        Some(build_candidate_evidence(cli, &a1_state, &child_result)?)
     } else {
         None
     };
@@ -550,6 +725,8 @@ fn run(cli: &Cli) -> Result<u8> {
         &probe_sha256,
         &argv,
         &security_evidence_argv,
+        &constructed_bwrap_argv,
+        &constructed_bwrap_argv_evidence,
         iso_snapshot_date,
         &cli.config_surface,
         true,
@@ -572,6 +749,10 @@ fn run(cli: &Cli) -> Result<u8> {
     Ok(EXIT_OK)
 }
 
+/// The private A2 setup binary (executed only through the static entry's
+/// secure-exec transition; its path carries no AppArmor profile).
+const BWRAP_REAL: &str = "/usr/libexec/neuestar/bwrap-real";
+
 /// A1 helper verification: exists, root-owned, not user-writable, exact
 /// selected upstream bytes.
 fn verify_a1_helper(cli: &Cli) -> Result<()> {
@@ -588,6 +769,121 @@ fn verify_a1_helper(cli: &Cli) -> Result<()> {
         anyhow::bail!("helper SHA-256 mismatch: expected {expected}, observed {actual}");
     }
     Ok(())
+}
+
+/// A2 entry verification: the static privilege-entry gate must be
+/// root-owned, a regular file, non-user-writable (itself and its parent),
+/// byte-pinned, and statically linked (no PT_INTERP, no PT_DYNAMIC — no
+/// dynamic loader means no loader injection). The carried bwrap-real must
+/// also be root-owned, regular, and byte-pinned to the exact upstream bytes.
+fn verify_a2_entry(cli: &Cli) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let entry_metadata = std::fs::metadata(&cli.helper_path)
+        .with_context(|| format!("entry missing: {}", cli.helper_path.display()))?;
+    if !entry_metadata.is_file() {
+        anyhow::bail!("entry is not a regular file");
+    }
+    if entry_metadata.uid() != 0 {
+        anyhow::bail!("entry is not root-owned (uid {})", entry_metadata.uid());
+    }
+    if entry_metadata.mode() & 0o022 != 0 {
+        anyhow::bail!("entry is group/world-writable");
+    }
+    let parent = cli.helper_path.parent().expect("entry parent");
+    if std::fs::metadata(parent)
+        .map(|metadata| metadata.mode() & 0o022 != 0)
+        .unwrap_or(true)
+    {
+        anyhow::bail!("entry parent directory is writable by group/world");
+    }
+    let actual = neuestar_probe_core::artifact::sha256_file(&cli.helper_path)?;
+    let expected = cli.expected_helper_sha256.as_deref().expect("validated");
+    if actual != expected {
+        anyhow::bail!("entry SHA-256 mismatch: expected {expected}, observed {actual}");
+    }
+    if !neuestar_elf::is_statically_linked(&cli.helper_path)? {
+        let interpreter = neuestar_elf::interpreter_of(&cli.helper_path)?;
+        anyhow::bail!(
+            "entry is not statically linked (interpreter: {}); the A2 trust anchor must have no dynamic loader",
+            interpreter.as_deref().unwrap_or("<non-ELF>")
+        );
+    }
+    let carried_path = std::path::Path::new(BWRAP_REAL);
+    let carried_metadata = std::fs::metadata(carried_path)
+        .with_context(|| format!("bwrap-real missing: {carried_path:?}"))?;
+    if !carried_metadata.is_file() || carried_metadata.uid() != 0 {
+        anyhow::bail!("bwrap-real is not a root-owned regular file");
+    }
+    let carried_actual = neuestar_probe_core::artifact::sha256_file(carried_path)?;
+    let carried_expected = cli.carried_helper_sha256.as_deref().expect("validated");
+    if carried_actual != carried_expected {
+        anyhow::bail!(
+            "bwrap-real SHA-256 mismatch: expected {carried_expected}, observed {carried_actual}"
+        );
+    }
+    Ok(())
+}
+
+/// Candidate A2: the entry invocation. `security_evidence` selects the H0.1S
+/// evidence mode (extra ro-bind of the probe binary into /tmp).
+fn entry_invocation(
+    cli: &Cli,
+    artifact_root: &std::path::Path,
+    report_parent: &std::path::Path,
+    archive_sha256: &str,
+    metadata: &neuestar_probe_core::artifact::ArtifactMetadata,
+    security_evidence: bool,
+    evidence_probe: Option<&std::path::Path>,
+) -> std::process::Command {
+    let mut command = std::process::Command::new(&cli.helper_path);
+    command
+        .env_clear()
+        .env("LANG", "C")
+        .env("LC_ALL", "C")
+        .arg("--artifact-root")
+        .arg(artifact_root)
+        .arg("--evidence-dir")
+        .arg(report_parent)
+        .arg("--mode")
+        .arg(if security_evidence {
+            "security-evidence"
+        } else {
+            "outcome"
+        })
+        .arg("--archive-sha256")
+        .arg(archive_sha256)
+        .arg("--payload-manifest-sha256")
+        .arg(&metadata.payload_manifest_sha256)
+        .arg("--source-commit")
+        .arg(&metadata.source_commit)
+        .arg("--probe-version")
+        .arg(&metadata.probe_version);
+    if let Some(probe) = evidence_probe {
+        command.arg("--evidence-probe").arg(probe);
+    }
+    command
+}
+
+/// Read the argv the entry recorded before exec (the operation it actually
+/// constructed). Fails closed on any malformed or missing evidence.
+fn read_entry_argv(path: &std::path::Path) -> Result<Vec<String>> {
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("missing {}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).context("entry argv evidence is malformed")?;
+    let argv = value
+        .get("argv")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("entry argv evidence lacks argv array"))?
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if argv.is_empty() {
+        anyhow::bail!("entry argv evidence is empty");
+    }
+    Ok(argv)
 }
 
 /// Install-time AppArmor state written by the integration package postinst
@@ -643,31 +939,84 @@ fn read_apparmor_state(path: &Path) -> Result<InstallState> {
     })
 }
 
-fn build_a1_evidence(
+fn build_candidate_evidence(
     cli: &Cli,
     state: &Option<InstallState>,
     child_result: &Option<ChildResult>,
 ) -> Result<CandidateEvidence> {
     use std::os::unix::fs::MetadataExt;
 
+    let is_a2 = cli.candidate == "A2";
     let helper_metadata = std::fs::metadata(&cli.helper_path)
         .with_context(|| format!("helper missing: {}", cli.helper_path.display()))?;
     let helper_sha = neuestar_probe_core::artifact::sha256_file(&cli.helper_path)?;
-    let policy_sha = neuestar_probe_core::artifact::sha256_file(&cli.policy_path)?;
-    let policy_loc = std::fs::read_to_string(&cli.policy_path)
-        .map(|text| {
-            text.lines()
-                .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
-                .count() as u64
-        })
-        .unwrap_or(0);
     let parent_writable = std::fs::metadata(cli.helper_path.parent().expect("helper parent"))
         .map(|metadata| metadata.mode() & 0o022 != 0)
         .unwrap_or(true);
     let _ = child_result;
 
-    let mut installed_files = vec![
-        InstalledFile {
+    // A2: the entry (trust anchor) and the carried bwrap-real are distinct
+    // files; A1: the helper is itself the carried component.
+    let policy_paths: Vec<std::path::PathBuf> = if is_a2 {
+        vec![
+            std::path::PathBuf::from("/etc/apparmor.d/neuestar-entry"),
+            std::path::PathBuf::from("/etc/apparmor.d/neuestar-bwrap-real"),
+            std::path::PathBuf::from("/etc/apparmor.d/neuestar-unpriv"),
+        ]
+    } else {
+        vec![cli.policy_path.clone()]
+    };
+    let policy_loc: u64 = policy_paths
+        .iter()
+        .map(|path| {
+            std::fs::read_to_string(path)
+                .map(|text| {
+                    text.lines()
+                        .filter(|line| {
+                            !line.trim().is_empty() && !line.trim_start().starts_with('#')
+                        })
+                        .count() as u64
+                })
+                .unwrap_or(0)
+        })
+        .sum();
+    let policy_sha = if is_a2 {
+        policy_paths
+            .iter()
+            .map(|path| neuestar_probe_core::artifact::sha256_file(path).unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("")
+    } else {
+        neuestar_probe_core::artifact::sha256_file(&cli.policy_path)?
+    };
+
+    let mut installed_files = Vec::new();
+    if is_a2 {
+        // entry: first-party trust anchor (kind: first-party-helper)
+        installed_files.push(InstalledFile {
+            path: cli.helper_path.display().to_string(),
+            size_bytes: helper_metadata.len(),
+            sha256: helper_sha.clone(),
+            uid: helper_metadata.uid(),
+            gid: helper_metadata.gid(),
+            mode: helper_metadata.mode(),
+            kind: "first-party-helper",
+        });
+        // bwrap-real: the single carried third-party component
+        let carried_path = std::path::Path::new(BWRAP_REAL);
+        let carried_metadata = std::fs::metadata(carried_path)
+            .with_context(|| format!("bwrap-real missing: {carried_path:?}"))?;
+        installed_files.push(InstalledFile {
+            path: BWRAP_REAL.to_owned(),
+            size_bytes: carried_metadata.len(),
+            sha256: neuestar_probe_core::artifact::sha256_file(carried_path)?,
+            uid: carried_metadata.uid(),
+            gid: carried_metadata.gid(),
+            mode: carried_metadata.mode(),
+            kind: "carried-component",
+        });
+    } else {
+        installed_files.push(InstalledFile {
             path: cli.helper_path.display().to_string(),
             size_bytes: helper_metadata.len(),
             sha256: helper_sha.clone(),
@@ -675,19 +1024,19 @@ fn build_a1_evidence(
             gid: helper_metadata.gid(),
             mode: helper_metadata.mode(),
             kind: "carried-component",
-        },
-        InstalledFile {
-            path: cli.policy_path.display().to_string(),
-            size_bytes: std::fs::metadata(&cli.policy_path)
-                .map(|m| m.len())
-                .unwrap_or(0),
-            sha256: policy_sha.clone(),
+        });
+    }
+    for policy_path in &policy_paths {
+        installed_files.push(InstalledFile {
+            path: policy_path.display().to_string(),
+            size_bytes: std::fs::metadata(policy_path).map(|m| m.len()).unwrap_or(0),
+            sha256: neuestar_probe_core::artifact::sha256_file(policy_path).unwrap_or_default(),
             uid: 0,
             gid: 0,
             mode: 0o644,
             kind: "security-policy",
-        },
-    ];
+        });
+    }
     if let Some(state_path) = state.as_ref().map(|_| cli.apparmor_state.as_path())
         && let Ok(metadata) = std::fs::metadata(state_path)
     {
@@ -705,19 +1054,46 @@ fn build_a1_evidence(
 
     let helper_profile_label = state
         .as_ref()
-        .and_then(|state| state.loaded_profiles.first())
+        .and_then(|state| {
+            state.loaded_profiles.iter().find(|profile| {
+                profile.path.as_deref() == Some(cli.helper_path.to_string_lossy().as_ref())
+            })
+        })
         .map(|profile| profile.name.clone())
-        .unwrap_or_else(|| "neuestar-bwrap".to_owned());
+        .unwrap_or_else(|| {
+            if is_a2 {
+                "neuestar-entry"
+            } else {
+                "neuestar-bwrap"
+            }
+            .to_owned()
+        });
+
+    let carried_binary_sha = if is_a2 {
+        cli.carried_helper_sha256
+            .clone()
+            .unwrap_or_else(|| "0".repeat(64))
+    } else {
+        cli.expected_helper_sha256
+            .clone()
+            .unwrap_or_else(|| "0".repeat(64))
+    };
 
     Ok(CandidateEvidence {
-        candidate: "A1",
+        candidate: cli.candidate.clone(),
         helper_profile_label,
         integration_identity_sha256: cli
             .integration_package_sha256
             .clone()
             .unwrap_or_else(|| neuestar_h0_probe::record::sha256_hex("")),
-        neuestar_integration_package_sha256: cli.integration_package_sha256.clone().expect("validated"),
-        integration_source_sha256: cli.integration_source_sha256.clone().unwrap_or_else(|| "0".repeat(64)),
+        neuestar_integration_package_sha256: cli
+            .integration_package_sha256
+            .clone()
+            .expect("validated"),
+        integration_source_sha256: cli
+            .integration_source_sha256
+            .clone()
+            .unwrap_or_else(|| "0".repeat(64)),
         security_policy_sha256: policy_sha,
         trusted_helper: TrustedHelperEvidence {
             canonical_path: cli.helper_path.display().to_string(),
@@ -726,6 +1102,9 @@ fn build_a1_evidence(
             gid: helper_metadata.gid(),
             mode: helper_metadata.mode(),
             regular_file: helper_metadata.is_file(),
+            elf_interpreter: neuestar_elf::interpreter_of(&cli.helper_path)
+                .ok()
+                .flatten(),
             parent_mount_writable_by_test_user: parent_writable,
         },
         burden: BurdenEvidence {
@@ -735,20 +1114,28 @@ fn build_a1_evidence(
             carried_components: vec![CarriedComponent {
                 upstream_project: "bubblewrap".to_owned(),
                 upstream_version_commit: "0.9.0".to_owned(),
-                source_provenance: "bundled within the frozen Campaign 002 artifact; selected bytes installed by the Neuestar A1 package".to_owned(),
-                binary_sha256: cli
-                    .expected_helper_sha256
-                    .clone()
-                    .unwrap_or_else(|| "0".repeat(64)),
+                source_provenance: if is_a2 {
+                    "exact pinned upstream bwrap bytes installed as /usr/libexec/neuestar/bwrap-real; reachable only through the static entry secure-exec transition".to_owned()
+                } else {
+                    "bundled within the frozen Campaign 002 artifact; selected bytes installed by the Neuestar A1 package".to_owned()
+                },
+                binary_sha256: carried_binary_sha,
                 patch_count: 0,
                 security_update_responsibility: "track upstream bubblewrap releases".to_owned(),
             }],
             helper_loc: 0,
         },
-        privileged_install_operations: vec![
-            serde_json::json!({"kind": "package-install", "description": "installed neuestar-h0-a1 deb (root-owned helper + AppArmor policy)"}),
-            serde_json::json!({"kind": "apparmor-policy-load", "description": "apparmor_parser -r /etc/apparmor.d/neuestar-bwrap; state recorded at /var/lib/neuestar/apparmor-state.json"}),
-        ],
+        privileged_install_operations: if is_a2 {
+            vec![
+                serde_json::json!({"kind": "package-install", "description": "installed neuestar-h0-a2 deb (static entry + private bwrap-real + three AppArmor policies)"}),
+                serde_json::json!({"kind": "apparmor-policy-load", "description": "apparmor_parser -r /etc/apparmor.d/neuestar-entry /etc/apparmor.d/neuestar-bwrap-real /etc/apparmor.d/neuestar-unpriv; state recorded at /var/lib/neuestar/apparmor-state.json"}),
+            ]
+        } else {
+            vec![
+                serde_json::json!({"kind": "package-install", "description": "installed neuestar-h0-a1 deb (root-owned helper + AppArmor policy)"}),
+                serde_json::json!({"kind": "apparmor-policy-load", "description": "apparmor_parser -r /etc/apparmor.d/neuestar-bwrap; state recorded at /var/lib/neuestar/apparmor-state.json"}),
+            ]
+        },
     })
 }
 
@@ -777,6 +1164,8 @@ fn write_apparatus_failure(
         "unverified",
         &sha256_self(),
         argv,
+        &[],
+        &[],
         &[],
         cli.iso_snapshot_date.as_deref().unwrap_or("unknown"),
         &cli.config_surface,

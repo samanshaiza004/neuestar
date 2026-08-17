@@ -322,6 +322,13 @@
         },
         "parent_mount_writable_by_test_user": {
           "type": "boolean"
+        },
+        "elf_interpreter": {
+          "description": "ELF interpreter (PT_INTERP) of the trusted helper; null when statically linked (required for A2: no dynamic loader means no loader injection).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -618,6 +625,24 @@
         },
         "security_evidence_argv": {
           "description": "The H0.1S security-evidence invocation argv (a second containment invocation with the extra evidence-probe bind). Required non-empty when gates.h0_1s is evaluated.",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "constructed_bwrap_argv": {
+          "description": "The bwrap argv the A2 entry actually constructed for the outcome run (recorded by the entry before exec, verified identical to the frozen command shape). Required for A2.",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "constructed_bwrap_argv_evidence": {
+          "description": "The bwrap argv the A2 entry constructed for the H0.1S security-evidence run.",
           "type": "array",
           "maxItems": 128,
           "items": {
@@ -1166,6 +1191,30 @@
           "required": [
             "failure"
           ]
+        }
+      }
+    },
+    {
+      "description": "A2: the entry is the trust anchor; its constructed argv must be recorded.",
+      "if": {
+        "properties": {
+          "candidate": {
+            "const": "A2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "apparatus": {
+            "required": [
+              "constructed_bwrap_argv"
+            ],
+            "properties": {
+              "constructed_bwrap_argv": {
+                "minItems": 1
+              }
+            }
+          }
         }
       }
     }
