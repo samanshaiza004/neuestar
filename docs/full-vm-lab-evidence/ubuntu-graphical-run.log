@@ -1,0 +1,20 @@
+=== [preflight] session env ===
+XDG_SESSION_TYPE=wayland
+WAYLAND_DISPLAY=wayland-0
+DISPLAY=:0
+XDG_RUNTIME_DIR=/run/user/1000
+XDG_SESSION_EXTRA_DEVICE_ACCESS=render:accel
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+=== [preflight] wayland socket ===
+srwxrwxr-x 1 lab lab 0 Aug 16 21:41 /run/user/1000/wayland-0
+=== [preflight] loginctl proof ===
+Id=1
+User=1000
+Seat=seat0
+TTY=tty2
+Type=wayland
+Class=user
+State=active
+=== [run] ===
+bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+PROBE_EXIT=71

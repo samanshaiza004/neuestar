@@ -1,7 +1,8 @@
 # Status
 
-Updated 2026-08-15. This file distinguishes implementation checks from physical
-Gate L0 evidence.
+Updated 2026-08-16. This file distinguishes implementation checks from physical
+Gate L0 evidence. Full-VM lab evidence (graphical Wayland guests, exit-65
+preflight vs exit-71 containment outcomes): [docs/full-vm-lab.md](docs/full-vm-lab.md).
 
 ## Implemented
 
@@ -20,20 +21,28 @@ Gate L0 evidence.
   and aggregation workflows. Physical workflows download and verify; they do
   not build or repair hosts.
 
-## Verified locally
+## Gate status
 
-- Repository began empty on 2026-08-15.
-- `scripts/check.sh` passes: formatting, strict workspace Clippy, 44 Rust tests,
-  report-schema shape, ShellCheck, and diff integrity.
-- A report-aggregation smoke test validated one explicit report while retaining
-  the other 23 cells as unrun.
-- A launcher preflight smoke test emitted a schema-valid failure report and the
-  aggregator accepted it as failed evidence.
-- Workflow syntax/lint checks pass.
+- L0.0: implemented; not run on physical Linux (observed failing in full VMs on
+  stock Ubuntu 26.04 userns policy and stock NixOS 26.05 controlled-root
+  construction, exit 71)
+- L0.1: implemented for the minimal child, not run on Linux
+- L0.2: not implemented
+- L0.3: not implemented
+- L0.4: not run
+- L0.5: not run
 
-These are implementation checks only. They are not evidence that Linux user
-namespaces, bundled bubblewrap, controlled glibc, Vulkan, or presentation work
-on any physical matrix cell.
+## Next falsifier
+
+Run the canonical build on Linux x86_64, publish exactly one archive/hash pair,
+then attempt ordinary-user L0.0/L0.1 on stock NixOS NVIDIA and Ubuntu NVIDIA
+Wayland/X11 hosts without preparation. Namespace denial is a valid failed
+result and must not be repaired. The full-VM lab established the only
+precondition the virtual environment can: the unchanged archive now passes
+preflight against a real logged-in Wayland session and fails inside namespace
+construction (exit 71) rather than at the display guard (exit 65). Implementation
+checks are not evidence that Linux user namespaces, bundled bubblewrap, controlled
+glibc, Vulkan, or presentation work on any physical matrix cell.
 
 ## Unresolved risks
 
@@ -47,19 +56,3 @@ on any physical matrix cell.
   part of the immutable payload identity.
 - No physical matrix or driver churn evidence exists.
 - Host-driver versus controlled-glibc compatibility remains the central risk.
-
-## Gate status
-
-- L0.0: implemented, not run on Linux
-- L0.1: implemented for the minimal child, not run on Linux
-- L0.2: not implemented
-- L0.3: not implemented
-- L0.4: not run
-- L0.5: not run
-
-## Next falsifier
-
-Run the canonical build on Linux x86_64, publish exactly one archive/hash pair,
-then attempt ordinary-user L0.0/L0.1 on stock NixOS NVIDIA and Ubuntu NVIDIA
-Wayland/X11 hosts without preparation. Namespace denial is a valid failed
-result and must not be repaired.

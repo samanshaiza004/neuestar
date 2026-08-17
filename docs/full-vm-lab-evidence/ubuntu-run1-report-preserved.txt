@@ -1,0 +1,32 @@
+-rw-rw-r-- 1 lab lab 2055 Aug 16 19:37 /home/lab/preflight-001/report.json
+-rw-rw-r-- 1 lab lab 2080 Aug 16 19:37 /home/lab/preflight-staging-fail-report.json
+---run1 report head---
+{
+  "schema": "neuestar.report/v1",
+  "artifact": {
+    "outer_archive_sha256": "02a4b6d3b04b37e8c8284bee15746b8365d7cdb4561b7eab405ba381886a68e7",
+    "payload_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "source_commit": "0000000000000000000000000000000000000000",
+    "probe_version": "0.1.0"
+  },
+  "matrix_cell": {
+    "distro": "ubuntu-lts",
+    "gpu_vendor": "nvidia",
+    "display_server": "wayland"
+  },
+  "observed_host": {
+    "distro_id": "ubuntu:26.04",
+    "distro_version": "26.04",
+    "kernel_release": "7.0.0-28-generic",
+    "architecture": "x86_64",
+    "gpu_description": "not-observed-phase-1",
+    "display_server": "tty"
+  },
+  "containment": {
+    "namespace_constructed": false,
+    "user_namespace_constructed": false,
+    "mount_namespace_constructed": false
+  },
+  "runtime": {
+    "libc_source": "not-determined",
+    "host_g

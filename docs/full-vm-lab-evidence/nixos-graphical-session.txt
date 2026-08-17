@@ -1,0 +1,32 @@
+=== id ===
+uid=1000(lab) gid=100(users) groups=100(users),1(wheel)
+=== sessions ===
+SESSION  UID USER SEAT  LEADER CLASS   TTY  IDLE SINCE
+      1 1000 lab  seat0 815    user    tty2 no   -
+      2 1000 lab  -     824    manager -    no   -
+      5 1000 lab  -     1587   user    -    no   -
+
+3 sessions listed.
+=== session detail ===
+Id=1
+User=1000
+Name=lab
+Seat=seat0
+TTY=tty2
+Remote=no
+Type=wayland
+Class=user
+State=active
+=== wayland socket ===
+srwxr-xr-x 1 lab users 0 Aug 17  2026 /run/user/1000/wayland-0
+=== gnome shell ===
+945 /nix/store/1ifljkfgq86xmrpcgg7xbr2c8c454n3x-gnome-shell-50.4/bin/gnome-shell --mode=user
+1018 /nix/store/1ifljkfgq86xmrpcgg7xbr2c8c454n3x-gnome-shell-50.4/libexec/gnome-shell-calendar-server
+=== compositor env ===
+DISPLAY=:0
+GNOME_SETUP_DISPLAY=unix:/tmp/.X11-unix/X1
+WAYLAND_DISPLAY=wayland-0
+XDG_SESSION_TYPE=wayland
+=== virt ===
+kvm
+6.18.44

@@ -1,0 +1,71 @@
+PROBE_EXIT=65
+{
+  "schema": "neuestar.report/v1",
+  "artifact": {
+    "outer_archive_sha256": "02a4b6d3b04b37e8c8284bee15746b8365d7cdb4561b7eab405ba381886a68e7",
+    "payload_manifest_sha256": "e0c2c60f81aaacdd53f79ede30ed52dfabda3e92c244b69f4bd5d66b8d8c9cc3",
+    "source_commit": "689760e3a1b6d4d1edde37f44f685d878a2158bd",
+    "probe_version": "0.1.0"
+  },
+  "matrix_cell": {
+    "distro": "nixos",
+    "gpu_vendor": "nvidia",
+    "display_server": "wayland"
+  },
+  "observed_host": {
+    "distro_id": "nixos:26.05",
+    "distro_version": "26.05",
+    "kernel_release": "6.18.44",
+    "architecture": "x86_64",
+    "gpu_description": "not-observed-phase-1",
+    "display_server": "tty"
+  },
+  "containment": {
+    "namespace_constructed": false,
+    "user_namespace_constructed": false,
+    "mount_namespace_constructed": false
+  },
+  "runtime": {
+    "libc_source": "not-determined",
+    "host_glibc_imported": false
+  },
+  "graphics": {
+    "renderer": "not-determined",
+    "renderer_description": "not-run-phase-1",
+    "device": "not-run-phase-1",
+    "software_renderer_detected": false,
+    "vendor_specific_rules": [
+      {
+        "category": "nvidia-device-nodes",
+        "description": "Expose only concrete NVIDIA device nodes discovered on the physical host"
+      }
+    ]
+  },
+  "presentation": {
+    "frames_requested": 0,
+    "frames_presented": 0,
+    "validation_errors": 0,
+    "device_loss": false
+  },
+  "capture": {
+    "capture_rule_sha256": "6f71fc1be6700a767903a4509cbdcd5e7a8eee297e31e3df7ea390938edfc355",
+    "dependency_count": 0,
+    "vendor_specific_rule_count": 1,
+    "distro_specific_rule_count": 0,
+    "host_path_count": 0
+  },
+  "gates": {
+    "l0_0_containment": "fail",
+    "l0_1_launch": "not-run",
+    "l0_2_acceleration": "not-run",
+    "l0_3_present": "not-run",
+    "l0_4_churn": "not-run",
+    "l0_5_maintenance": "not-run"
+  },
+  "classification": "fail",
+  "failure": {
+    "stage": "preflight",
+    "code": "preflight-failed",
+    "message": "declared matrix cell does not match the observed host: expected display wayland, observed tty"
+  }
+}

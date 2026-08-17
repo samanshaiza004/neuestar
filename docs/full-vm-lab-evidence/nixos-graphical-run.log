@@ -1,0 +1,19 @@
+=== [preflight] session env ===
+XDG_SESSION_TYPE=wayland
+WAYLAND_DISPLAY=wayland-0
+DISPLAY=:0
+XDG_RUNTIME_DIR=/run/user/1000
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+=== [preflight] wayland socket ===
+srwxr-xr-x 1 lab users 0 Aug 17  2026 /run/user/1000/wayland-0
+=== [preflight] loginctl proof ===
+Id=1
+User=1000
+Seat=seat0
+TTY=tty2
+Type=wayland
+Class=user
+State=active
+=== [run] ===
+bwrap: Can't create file at /app/probe: Read-only file system
+PROBE_EXIT=71
