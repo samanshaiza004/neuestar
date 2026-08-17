@@ -44,6 +44,20 @@ invocation (probe re-exec inside the same boundary).
 | burden | 3 installed files / 73,430 bytes, policy 34 LOC, 1 distro branch, 1 carried component (0 patches) |
 | schema + h0-check | valid + **PASS** (0 violations) |
 
+## Adjudication (2026-08-17)
+
+- **H0.1 — PASS (accepted).**
+- **H0.1S — PARTIAL / NOT YET ACCEPTED as the gate verdict.** The machine
+  result (stacked child, raw CapEff 0) is preserved as raw evidence in
+  `docs/a1-preflight-evidence/`, but the frozen H0.1S contract requires
+  negative evidence — arbitrary child code must not be able to obtain
+  equivalent setup authority, the helper must not be redirectable to a
+  user-writable executable, and installing A1 must not grant ordinary
+  application code additional host privilege — none of which the machine
+  result executed. The adversarial suite (user-writable helper copy, ordinary
+  app userns attempt, malicious child, hostile LD_PRELOAD/loader-env
+  injection, mechanized static invariants) is the pending gate.
+
 ## Interpretation
 
 - **H0.1 = pass**: the installed root-owned helper with the Neuestar AppArmor
