@@ -71,6 +71,37 @@ no hidden PID-namespace requirement is introduced.
 The same artifact is used for both guests; no change between them regardless
 of which runs first.
 
+## Execution outcome (FULL-VM PREFLIGHT, 2026-08-16)
+
+Evidence: [`docs/campaign-002-evidence/`](campaign-002-evidence/). Fresh overlays
+over the pristine bases; lab credential rotated on the Ubuntu overlay (old
+credential invalidated) as ordinary provisioning; SSH-key-only access; fresh
+evidence directories; Wayland session verified on both overlays before the
+runs. Ubuntu ran first; the specimen was not changed between guests.
+
+| | ubuntu-2604-c2 | nixos-2605-c2 |
+|---|---|---|
+| observed display | `wayland` (ubuntu:GNOME) | `wayland` (GNOME) |
+| PROBE_EXIT | 71 | 0 |
+| substage | `helper-execution` | — |
+| process_stderr | `bwrap: setting up uid map: Permission denied` | — |
+| L0.0 containment | fail | **pass** (user+mount ns differ, controlled root) |
+| L0.1 launch | not-run | **pass** (controlled glibc 2.39, no host glibc import) |
+| L0.2–L0.5 | not-run | not-run |
+| classification | fail (containment) | fail (graphics not implemented) |
+
+- **NixOS 26.05**: the minimum user+mount containment contract succeeds
+  zero-preparation as an ordinary user in the full VM — L0.0/L0.1 pass with
+  controlled glibc and no host-glibc import. First clean minimum-containment
+  milestone.
+- **Ubuntu 26.04**: with the network-namespace over-scope removed, the minimum
+  contract fails at the user-namespace boundary itself: stock AppArmor
+  (`apparmor_restrict_unprivileged_userns=1`) denies the uid-map setup for an
+  unprofiled ordinary download. Recorded, not bypassed (KILL-CONDITIONS).
+- Both results are FULL-VM PREFLIGHT evidence, never physical Gate L0 evidence.
+  Protocol: stopped on L0.0 failure with no guest repair; guests left as-is;
+  identical specimen for both guests.
+
 ## Post-campaign cleanup list (non-blocking, from review)
 
 - Reject reused output paths before writing any evidence files, or create

@@ -2,7 +2,8 @@
 
 Updated 2026-08-16. This file distinguishes implementation checks from physical
 Gate L0 evidence. Full-VM lab evidence: [docs/full-vm-lab.md](docs/full-vm-lab.md);
-Campaign 001 apparatus-failure verdict: [docs/CAMPAIGN-001-VERDICT.md](docs/CAMPAIGN-001-VERDICT.md).
+Campaign 001 apparatus-failure verdict: [docs/CAMPAIGN-001-VERDICT.md](docs/CAMPAIGN-001-VERDICT.md);
+Campaign 002 frozen specimen + outcome: [docs/CAMPAIGN-002.md](docs/CAMPAIGN-002.md).
 
 ## Implemented
 
@@ -23,12 +24,11 @@ Campaign 001 apparatus-failure verdict: [docs/CAMPAIGN-001-VERDICT.md](docs/CAMP
 
 ## Gate status
 
-- L0.0: implemented; not run on physical Linux. Full-VM executions of the
-  Campaign 001 specimen failed at exit 71 in two specimen-defect modes —
-  over-scoped netns setup on Ubuntu 26.04 and a read-only-root bind-mount defect
-  on NixOS 26.05 (docs/CAMPAIGN-001-VERDICT.md). Neither was attributed to
-  platform incompatibility; L0.0 under stock NixOS/Ubuntu policy is unresolved
-  pending Campaign 002.
+- L0.0: implemented; not run on physical Linux. FULL-VM executions of the
+  Campaign 002 specimen (probe 0.2.0, docs/CAMPAIGN-002.md): L0.0/L0.1 PASS on
+  stock NixOS 26.05; L0.0 FAIL on stock Ubuntu 26.04 (AppArmor denies
+  unprivileged user-namespace uid-map setup — `bwrap: setting up uid map:
+  Permission denied`). FULL-VM preflight only; physical cells pending.
 - L0.1: implemented for the minimal child, not run on Linux
 - L0.2: not implemented
 - L0.3: not implemented
