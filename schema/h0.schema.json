@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:neuestar:h0:v1",
   "title": "Neuestar Gate H0 attempt record",
-  "description": "Versioned machine-readable H0 evidence model (Installed Substrate). Separate from neuestar.report/v2; H0 never modifies frozen Campaign artifacts. Thresholds from docs/GATE-H0.md and docs/H0-KILL-CONDITIONS.md are enforced here as bounds so a record cannot be admitted with over-threshold values.",
+  "description": "Versioned machine-readable H0 evidence model (Installed Substrate). Separate from neuestar.report/v2; H0 never modifies frozen Campaign artifacts. STRUCTURAL VALIDITY vs POLICY ENFORCEMENT are deliberately separated: this schema only bounds strings/arrays/hashes/required evidence so any observed reality is representable; the frozen GATE-H0/H0-KILL-CONDITIONS thresholds (8 MiB, 20 files, 200 policy LOC, 2 branches, 0 services/deps/patches, <=2 host packages, <=1 carried component, 2000 helper LOC) are enforced by the H0 checker, not by this schema. A failed hypothesis (e.g., a 9 MiB integration package) must remain a VALID record whose checker verdict is FAIL.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,12 +12,16 @@
     "security_state",
     "candidate",
     "integration",
+    "trusted_helper",
     "runtime",
     "burden",
+    "privileged_install_operations",
     "execution",
     "apparatus",
     "gates",
-    "classification"
+    "classification",
+    "forbidden_preparation",
+    "evidence"
   ],
   "properties": {
     "schema": {
@@ -203,6 +207,7 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "neuestar_integration_package_sha256": {
+          "description": "Null for Candidate B (and only for B).",
           "type": ["string", "null"],
           "pattern": "^[0-9a-f]{64}$"
         },
@@ -220,11 +225,12 @@
         },
         "host_bwrap_binary_sha256": {
           "type": "string",
-          "maxLength": 128
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     },
     "trusted_helper": {
+      "description": "Null when there is no Neuestar-owned helper (candidates none and B); required object for A1/A2.",
       "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["canonical_path", "sha256", "uid", "gid", "mode", "parent_mount_writable_by_test_user"],
@@ -277,6 +283,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "installed_files",
         "installed_byte_count",
         "installed_file_count",
         "policy_loc",
@@ -288,42 +295,81 @@
         "helper_loc"
       ],
       "properties": {
+        "installed_files": {
+          "description": "Exact installed-file manifest. The H0 checker derives installed_byte_count and installed_file_count from this manifest (including carried third-party bytes/files) rather than trusting the submitted totals.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "size_bytes", "sha256", "uid", "gid", "mode", "kind"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "uid": {
+                "type": "integer"
+              },
+              "gid": {
+                "type": "integer"
+              },
+              "mode": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["carried-component", "first-party-helper", "security-policy", "config", "other"]
+              }
+            }
+          }
+        },
         "installed_byte_count": {
-          "description": "All bytes the Neuestar integration package installs, including any carried third-party component (bwrap), excluding package-manager metadata. Ceiling 8 MiB (GATE-H0 §8).",
+          "description": "Reported total (checker recomputes from installed_files). Frozen policy ceiling 8 MiB is enforced by the checker, not here.",
           "type": "integer",
           "minimum": 0,
-          "maximum": 8388608
+          "maximum": 1073741824
         },
         "installed_file_count": {
-          "description": "Neuestar-owned filesystem entries only, including carried third-party files.",
+          "description": "Reported count (checker recomputes from installed_files). Frozen policy ceiling 20 enforced by the checker.",
           "type": "integer",
           "minimum": 0,
-          "maximum": 20
+          "maximum": 4096
         },
         "policy_loc": {
-          "description": "Nonblank/noncomment Neuestar-maintained policy source across all distros, including local includes.",
+          "description": "Nonblank/noncomment Neuestar-maintained policy source across all distros. Frozen policy ceiling 200 enforced by the checker.",
           "type": "integer",
           "minimum": 0,
-          "maximum": 200
+          "maximum": 10000
         },
         "distro_branch_count": {
-          "description": "Semantically different code/policy paths; packaging boilerplate excluded.",
+          "description": "Semantically different code/policy paths. Frozen policy ceiling 2 enforced by the checker.",
           "type": "integer",
           "minimum": 0,
-          "maximum": 2
+          "maximum": 32
         },
         "services": {
-          "description": "Services/daemons introduced; hard ceiling 0.",
+          "description": "Services/daemons introduced. Frozen policy ceiling 0 enforced by the checker.",
           "type": "array",
-          "maxItems": 0,
+          "maxItems": 64,
           "items": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 256
           }
         },
         "additional_host_packages": {
-          "description": "Distro-supported-repository dependencies only; no third-party repos, no exact version pinning, no dependency forcing Neuestar policy changes during ordinary updates. Ceiling 2.",
+          "description": "Distro-supported-repository dependencies only; no third-party repos, no exact version pinning, no dependency forcing Neuestar policy changes during ordinary updates. Frozen policy ceiling 2 enforced by the checker.",
           "type": "array",
-          "maxItems": 2,
+          "maxItems": 64,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -345,33 +391,43 @@
           }
         },
         "neuestar_maintained_dependencies": {
-          "description": "Dependencies Neuestar must maintain itself; hard ceiling 0.",
+          "description": "Dependencies Neuestar must maintain itself. Frozen policy ceiling 0 enforced by the checker.",
           "type": "array",
-          "maxItems": 0,
+          "maxItems": 64,
           "items": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 256
           }
         },
         "carried_components": {
-          "description": "Neuestar-carried third-party components; ceiling 1, zero local patches (GATE-H0 §8, H0-FREEZE).",
+          "description": "Neuestar-carried third-party components. Frozen policy: ceiling 1 with zero local patches (GATE-H0 §8, H0-FREEZE). Per-candidate constraints below.",
           "type": "array",
-          "maxItems": 1,
+          "maxItems": 16,
           "items": {
             "$ref": "#/$defs/carriedComponent"
           }
         },
         "helper_loc": {
-          "description": "First-party helper source LOC only (A2); a carried bwrap counts zero first-party LOC and is accounted under carried_components.",
+          "description": "First-party helper source LOC only (A2). Frozen policy ceiling 2000 enforced by the checker; per-candidate constraints below.",
           "type": "integer",
           "minimum": 0,
-          "maximum": 2000
+          "maximum": 100000
         }
+      }
+    },
+    "privileged_install_operations": {
+      "description": "Normal expected privileged package-lifecycle operations (install/update/remove, policy load), recorded separately from forbidden_preparation. Empty array when none.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "enum": ["package-install", "package-update", "package-remove", "apparmor-policy-load", "selinux-policy-load", "other"]
       }
     },
     "execution": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["child_effective_capabilities"],
+      "required": ["child_effective_capabilities", "child_cap_eff_hex"],
       "properties": {
         "helper_profile_label": {
           "type": "string",
@@ -382,13 +438,18 @@
           "maxLength": 256
         },
         "child_effective_capabilities": {
-          "description": "CapEff of the contained child, interpreted together with its namespace identity below (H0.1S; H0-FREEZE interpretation 2).",
+          "description": "Decoded CapEff of the contained child; meaningful only with namespace identity and profile labels (H0.1S).",
           "type": "array",
           "maxItems": 64,
           "items": {
             "type": "string",
             "maxLength": 64
           }
+        },
+        "child_cap_eff_hex": {
+          "description": "Raw kernel CapEff bitmask, preserved so a decoder bug cannot silently become the evidence.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{1,32}$"
         },
         "child_user_namespace_id": {
           "type": "string",
@@ -403,7 +464,7 @@
     "apparatus": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["probe_sha256"],
+      "required": ["probe_sha256", "containment_argv"],
       "properties": {
         "probe_sha256": {
           "type": "string",
@@ -411,6 +472,7 @@
         },
         "containment_argv": {
           "type": "array",
+          "minItems": 1,
           "maxItems": 128,
           "items": {
             "type": "string",
@@ -422,7 +484,7 @@
     "gates": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["h0_0", "h0_1", "h0_1s", "h0_2a", "h0_2b", "h0_3", "h0_4", "h0_4r", "h0_5", "h0_p"],
+      "required": ["h0_0", "h0_1", "h0_1s", "h0_2a", "h0_2b", "h0_3", "h0_4", "h0_4r", "h0_5", "h0_6", "h0_p"],
       "properties": {
         "h0_0": { "$ref": "#/$defs/gateState" },
         "h0_1": { "$ref": "#/$defs/gateState" },
@@ -433,12 +495,14 @@
         "h0_4": { "$ref": "#/$defs/gateState" },
         "h0_4r": { "$ref": "#/$defs/gateState" },
         "h0_5": { "$ref": "#/$defs/gateState" },
+        "h0_6": { "$ref": "#/$defs/gateState" },
         "h0_p": { "$ref": "#/$defs/gateState" }
       }
     },
     "classification": {
+      "description": "No 'inconclusive' at the attempt level: ambiguity resolves against Installed Substrate and is recorded as fail. Gate-level inconclusive remains available.",
       "type": "string",
-      "enum": ["pass", "fail", "inconclusive"]
+      "enum": ["pass", "fail"]
     },
     "failure": {
       "type": "object",
@@ -447,7 +511,7 @@
       "properties": {
         "stage": {
           "type": "string",
-          "enum": ["apparatus", "baseline", "integration", "security-preservation", "generation", "application", "churn", "cross-release", "unknown"]
+          "enum": ["apparatus", "baseline", "integration", "security-preservation", "generation", "application", "churn", "cross-release", "threshold", "unknown"]
         },
         "code": {
           "type": "string",
@@ -512,54 +576,152 @@
   },
   "allOf": [
     {
-      "description": "Candidate B: distro /usr/bin/bwrap — no Neuestar integration package; host bwrap identity recorded.",
-      "if": { "properties": { "candidate": { "const": "B" } } },
+      "description": "LSM-conditional evidence: apparmor/selinux/none require or forbid the matching security-state object.",
+      "if": { "properties": { "security_state": { "properties": { "lsm": { "const": "apparmor" } } } } },
+      "then": { "properties": { "security_state": { "required": ["apparmor"] } } }
+    },
+    {
+      "if": { "properties": { "security_state": { "properties": { "lsm": { "const": "selinux" } } } } },
+      "then": { "properties": { "security_state": { "required": ["selinux"] } } }
+    },
+    {
+      "if": { "properties": { "security_state": { "properties": { "lsm": { "const": "none" } } } } },
       "then": {
         "properties": {
+          "security_state": {
+            "allOf": [
+              { "not": { "required": ["apparmor"] } },
+              { "not": { "required": ["selinux"] } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "Candidate B: distro /usr/bin/bwrap — no Neuestar integration package, trusted_helper explicitly null, host bwrap identity recorded.",
+      "if": { "properties": { "candidate": { "const": "B" } } },
+      "then": {
+        "required": ["trusted_helper"],
+        "properties": {
+          "trusted_helper": { "const": null },
           "integration": {
-            "required": ["host_bwrap_package_version"],
+            "required": ["host_bwrap_package_version", "host_bwrap_binary_sha256"],
             "properties": {
               "neuestar_integration_package_sha256": { "const": null }
             }
           },
-          "trusted_helper": { "const": null }
-        }
-      }
-    },
-    {
-      "description": "Candidates A1/A2: Neuestar integration package and root-owned helper required; carried components permitted (<=1).",
-      "if": {
-        "properties": { "candidate": { "enum": ["A1", "A2"] } }
-      },
-      "then": {
-        "properties": {
-          "integration": {
-            "required": [
-              "neuestar_integration_package_sha256",
-              "integration_source_sha256",
-              "security_policy_sha256"
-            ]
-          },
-          "trusted_helper": {
-            "type": "object"
-          }
-        }
-      }
-    },
-    {
-      "description": "Candidate none: no integration, no trusted helper, no carried components, no host packages.",
-      "if": { "properties": { "candidate": { "const": "none" } } },
-      "then": {
-        "properties": {
-          "trusted_helper": { "const": null },
           "burden": {
             "properties": {
               "carried_components": { "maxItems": 0 },
-              "additional_host_packages": { "maxItems": 0 }
+              "helper_loc": { "const": 0 }
             }
           }
         }
       }
+    },
+    {
+      "description": "Candidates A1/A2: Neuestar integration package and trusted_helper required (as an object, not omitted); integration SHAs must be real 64-hex strings, not null; H0.1S execution evidence complete; AppArmor loaded-profile evidence required when LSM is apparmor.",
+      "if": { "properties": { "candidate": { "enum": ["A1", "A2"] } } },
+      "then": {
+        "required": ["trusted_helper"],
+        "properties": {
+          "trusted_helper": { "type": "object" },
+          "integration": {
+            "required": ["neuestar_integration_package_sha256", "integration_source_sha256", "security_policy_sha256"],
+            "properties": {
+              "neuestar_integration_package_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "integration_source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "security_policy_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          },
+          "security_state": {
+            "properties": {
+              "apparmor": {
+                "required": ["loaded_profiles"],
+                "properties": { "loaded_profiles": { "minItems": 1 } }
+              }
+            }
+          },
+          "execution": {
+            "required": [
+              "helper_profile_label",
+              "child_profile_label",
+              "child_effective_capabilities",
+              "child_cap_eff_hex",
+              "child_user_namespace_id",
+              "child_mount_namespace_id"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "Candidate A1: exactly one carried third-party component (the selected bwrap), zero first-party helper LOC.",
+      "if": { "properties": { "candidate": { "const": "A1" } } },
+      "then": {
+        "properties": {
+          "burden": {
+            "properties": {
+              "carried_components": { "minItems": 1, "maxItems": 1 },
+              "helper_loc": { "const": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Candidate A2: no carried components unless separately justified; first-party helper LOC bounded by the frozen 2000 ceiling.",
+      "if": { "properties": { "candidate": { "const": "A2" } } },
+      "then": {
+        "properties": {
+          "burden": {
+            "properties": {
+              "carried_components": { "maxItems": 0 },
+              "helper_loc": { "maximum": 2000 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Candidate none: zero integration — trusted_helper null, empty manifest, zero burden values, null integration SHAs.",
+      "if": { "properties": { "candidate": { "const": "none" } } },
+      "then": {
+        "required": ["trusted_helper"],
+        "properties": {
+          "trusted_helper": { "const": null },
+          "integration": {
+            "properties": {
+              "neuestar_integration_package_sha256": { "const": null },
+              "integration_source_sha256": { "const": null },
+              "security_policy_sha256": { "const": null }
+            }
+          },
+          "burden": {
+            "properties": {
+              "installed_files": { "maxItems": 0 },
+              "installed_byte_count": { "const": 0 },
+              "installed_file_count": { "const": 0 },
+              "policy_loc": { "const": 0 },
+              "distro_branch_count": { "const": 0 },
+              "services": { "maxItems": 0 },
+              "additional_host_packages": { "maxItems": 0 },
+              "neuestar_maintained_dependencies": { "maxItems": 0 },
+              "carried_components": { "maxItems": 0 },
+              "helper_loc": { "const": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Classification/failure coupling: fail requires a structured failure; pass forbids one.",
+      "if": { "properties": { "classification": { "const": "fail" } } },
+      "then": { "required": ["failure"] }
+    },
+    {
+      "if": { "properties": { "classification": { "const": "pass" } } },
+      "then": { "not": { "required": ["failure"] } }
     }
   ],
   "$defs": {
@@ -604,7 +766,7 @@
           "minimum": 0
         },
         "neuestar_specific_patches": {
-          "description": "Hard requirement: zero local patches.",
+          "description": "Frozen hard requirement: zero local patches (enforced here as const; the checker re-verifies).",
           "const": 0
         },
         "security_update_responsibility": {
