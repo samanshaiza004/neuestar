@@ -25,7 +25,10 @@ the following becomes necessary:
 12. Any ordinary in-release supported security-policy update requiring a
     Neuestar integration-source change. (Strict reading: "any", not
     "repeatedly". Cross-major-release adaptation is measured separately under
-    H0.4R / H0.6 and is not in-release churn.)
+    H0.4R / H0.6 and is not in-release churn. Upstream security/version updates
+    of a Neuestar-carried third-party component are recorded as integration-
+    identity changes and maintenance events, not H0.5 failures — H0.5 measures
+    host-policy churn.)
 13. The integration layer grows enough that Neuestar is effectively
     maintaining a mini Flatpak/Steam Runtime distribution stack rather than a
     small host adapter (thresholds below).
@@ -44,7 +47,8 @@ Definitions are intrinsic and non-gameable:
 - distro branch = a semantically different code/policy path, not packaging
   boilerplate;
 - helper LOC = first-party helper code only; generated/vendor code excluded
-  (a Neuestar-selected bwrap binary counts zero).
+  (a Neuestar-selected bwrap binary counts zero first-party LOC and is
+  accounted under Neuestar-carried third-party components instead).
 
 | Metric | Ceiling | Rationale |
 |---|---|---|
@@ -55,6 +59,8 @@ Definitions are intrinsic and non-gameable:
 | Services/daemons | 0 | A static on-demand helper needs no daemon. |
 | Additional required host packages | ≤ 2 | Distro supported repos only; no third-party repos; no exact version pinning; no dependency whose ABI/version forces Neuestar policy changes during ordinary supported updates; all counted. A dependency is not automatically equal maintenance burden to vendored code. |
 | Neuestar-maintained dependencies | 0 | Any dependency we must maintain ourselves is churn surface. |
+| Neuestar-carried third-party components | ≤ 1 | e.g., the selected bwrap in A1. For each: upstream project, upstream version/commit, source provenance, binary SHA-256, patch count, security/update responsibility. Carrying a component inherits release/vulnerability/compatibility tracking even when its source is not ours. |
+| Neuestar-local patches to carried third-party components | 0 | A private bwrap patch stack changes the integration burden; zero patches is a hard requirement for H0. |
 | Helper source LOC (first-party) | ≤ 2 000 | Auditability of the root-owned trust anchor if A2 is ever built. |
 | Policy churn tolerance (in-release) | 0 edits per ordinary supported update | Any required edit is H0.5 failure (hard gate, not a threshold). |
 

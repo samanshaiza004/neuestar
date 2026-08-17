@@ -3,10 +3,12 @@
 Status: **PROPOSAL, revised per architectural review — awaiting freeze.**
 No code or VMs touched.
 
-Campaign 002 (frozen) tested the strong Zero-Preparation Substrate hypothesis
-and was rejected on Ubuntu 26.04 full-VM policy (`bwrap: setting up uid map:
-Permission denied`). That result stands; it is never reclassified, repaired,
-omitted, or replaced by H0 evidence.
+Campaign 002 (frozen) produced a substantive FULL-VM PREFLIGHT failure on
+Ubuntu 26.04 under the Zero-Preparation Substrate hypothesis
+(`bwrap: setting up uid map: Permission denied`). The physical Gate L0 verdict
+remains pending the precommitted bare-metal Ubuntu confirmation. That result
+stands; it is never reclassified, repaired, omitted, or replaced by H0
+evidence.
 
 Gate H0 tests a NEW hypothesis:
 
@@ -19,12 +21,16 @@ Until the pending bare-metal Ubuntu 26.04 Campaign 002 confirmation completes,
 all H0 execution is labeled **H0 PREFLIGHT**. H0 does not supersede L0, and a
 successful H0 does not change any Campaign 002 statement.
 
-The only valid post-H0 statement is:
+The only valid post-H0 statement is phase-sensitive:
 
-> "Campaign 002 rejected the zero-preparation substrate on Ubuntu. Gate H0
-> separately found that an installed host-integration layer can/cannot recover
-> the Installed Substrate hypothesis within its precommitted maintenance
-> budget."
+- Before the physical confirmation: "Campaign 002 produced the Ubuntu
+  zero-preparation FULL-VM failure. Gate H0 separately found that an installed
+  host-integration layer can/cannot recover the Installed Substrate hypothesis
+  within its precommitted maintenance budget."
+- After a matching physical confirmation: "Campaign 002 rejected the
+  zero-preparation substrate on Ubuntu. Gate H0 separately found that an
+  installed host-integration layer can/cannot recover the Installed Substrate
+  hypothesis within its precommitted maintenance budget."
 
 ## 1. Hypothesis question
 
@@ -161,6 +167,16 @@ rerun. **Any** ordinary in-release supported security-policy update requiring a
 Neuestar integration-source change is H0.5 failure (this matches the stricter
 reading of kill condition 12; the two must not diverge).
 
+Two kinds of churn are distinguished:
+
+- **H0.5 policy churn** (the gate above): a host/distro update forces a
+  Neuestar policy/source edit → FAIL.
+- **Third-party helper maintenance** (not H0.5): a Neuestar-carried component's
+  upstream security/version update → the integration identity change and the
+  maintenance event are recorded; it is not automatically an H0.5 failure.
+  H0.5 measures host-policy churn, not routine maintenance of a carried
+  component.
+
 ### H0.6 — Lifecycle evidence (long-horizon, later)
 
 If a long-horizon claim is wanted (e.g., 26.04 → next Ubuntu LTS /
@@ -187,7 +203,7 @@ anything from Fedora/Arch.
 |---|---|---|
 | Ubuntu 26.04 LTS | AppArmor unprivileged-userns restriction default-on; `bwrap-userns-restrict` profile ships in Ubuntu AppArmor packaging, attached to `/usr/bin/bwrap` (userns/mount/pivot_root in profile, capability-denying stacked child) | fail (Campaign 002 reproduced) |
 | Ubuntu 24.04.4 LTS | Restriction default-on since 24.04 (part of the LTS security model). The bwrap-profile packaging/enforcement state **changed during Noble updates**: a July 2024 bwrap profile caused regressions and was reverted; `4.0.1really4.0.1-0ubuntu0.24.04.3` (September 2024, Noble updates) retained the change that enables `bwrap-userns-restrict`; current Noble is beyond that. H0 must inspect the exact currently installed/loaded policy state rather than assume the initial-release state. | fail (expected; must be observed) |
-| Fedora 44 | Unprivileged userns enabled by default (`user.max_user_namespaces`; no Ubuntu-style AppArmor mediation); SELinux enforcing but default desktop users unconfined; bwrap/flatpak work | pass (expected; must be observed) |
+| Fedora 44 | Unprivileged userns enabled by default (`user.max_user_namespaces`; no Ubuntu-style AppArmor mediation); SELinux enforcing; the actual test-user SELinux domain and applicable policy are recorded at runtime; bwrap/flatpak work | pass (expected; must be observed) |
 | Arch (official `linux`) | Unprivileged userns enabled on officially supported kernels **except `linux-hardened`**; AppArmor not enabled/enforcing by default | pass (expected; must be observed) |
 | NixOS 26.05 | Unprivileged userns permitted; no AppArmor userns mediation (stock generated configuration) | pass (Campaign 002 evidence) |
 
@@ -197,19 +213,24 @@ evidence records the concrete policy state (below).
 
 ## 6. Target host profiles (exact scoping)
 
-- **Arch Linux**: official `linux` kernel; exact ISO/snapshot date (YYYY-MM-DD)
-  and exact kernel version recorded; stock AppArmor state; ordinary
-  desktop/user configuration. Decide **before execution** whether
-  `linux-hardened` is (a) a required target whose failure can kill H0, or (b)
-  an explicitly unsupported optional kernel profile. Default proposal: (b),
-  recorded as such — do not discover the policy after it fails. Note that the
-  Arch bubblewrap documentation warns hardened-kernel users may need
-  `bubblewrap-suid`, which H0 forbids (invariant F).
+- **Arch Linux — mandatory target (frozen)**: official `linux` kernel; exact
+  ISO/snapshot date (YYYY-MM-DD) and exact kernel version recorded; stock
+  AppArmor state; ordinary desktop/user configuration.
+- **Arch `linux-hardened` — explicitly OUTSIDE H0 v1 mandatory support scope
+  (frozen)**: optional adversarial/lifecycle target only; it cannot be silently
+  promoted or demoted after results. Arch documents that ordinary bubblewrap
+  may not work there without enabling userns or using the setuid variant, both
+  incompatible with H0's frozen policy (invariant F).
+- **Fedora 44 — mandatory target (frozen)**: Fedora 44 Workstation x86_64,
+  default SELinux enforcing policy, no local SELinux modifications; bwrap
+  package as shipped by the distro.
+- **Ubuntu 24.04.4 LTS — mandatory target (frozen)**: current-updates state;
+  exact installed/loaded AppArmor policy recorded at runtime (Noble's
+  bwrap/profile packaging changed over time; the profile may be shipped and
+  enabled in current updates).
 - **NixOS 26.05**: "stock generated configuration / no AppArmor" is a
   particular target profile, not a claim about every configurable NixOS
   installation; record the actual configuration surface.
-- **Ubuntu**: exact current update state captured (see evidence model), since
-  Noble's bwrap/profile packaging changed over time.
 
 ## 7. Candidate architectures
 
@@ -266,7 +287,8 @@ Definitions (tightened so the numbers cannot be gamed):
 - distro branch = a semantically different code/policy path, not packaging
   boilerplate;
 - helper LOC = first-party helper code only; generated/vendor code excluded
-  (A1's selected bwrap binary therefore counts zero).
+  (A1's selected bwrap therefore counts zero first-party LOC; it is accounted
+  under Neuestar-carried third-party components instead, below).
 
 | Metric | Ceiling | Rationale |
 |---|---|---|
@@ -277,6 +299,8 @@ Definitions (tightened so the numbers cannot be gamed):
 | Services/daemons | 0 | A static on-demand helper needs no daemon; daemons add perpetual maintenance and attack surface. |
 | Additional required host packages | ≤ 2 | Must come from the distro's supported repositories; no third-party repositories; no exact package-version pinning; no dependency whose ABI/version forces Neuestar policy changes during ordinary supported updates; all dependencies counted and recorded. A dependency is not automatically equal maintenance burden to vendored code. |
 | Neuestar-maintained dependencies | 0 | Any dependency we must maintain ourselves is churn surface. |
+| Neuestar-carried third-party components | ≤ 1 | e.g., the selected bwrap in A1. For each: upstream project, upstream version/commit, source provenance, binary SHA-256, patch count, security/update responsibility. Carrying a component inherits release/vulnerability/compatibility tracking even when its source is not ours. |
+| Neuestar-local patches to carried third-party components | 0 | The moment a private bwrap patch stack exists, the integration burden has changed substantially. Zero patches is a hard requirement for H0. |
 | Helper source LOC (first-party) | ≤ 2 000 | Auditability of the root-owned trust anchor if A2 is ever built (bwrap itself ≈ 5k LOC but is vendor/excluded for A1). |
 | Policy churn tolerance (in-release) | 0 edits per ordinary supported update | Any required edit is H0.5 failure (hard gate, not a threshold). |
 
