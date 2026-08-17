@@ -97,8 +97,9 @@ A2a/H0.1 + H0.1S    PASS (valid C002 run; machine + adversarial suite + ptrace f
 
 Candidate A2a is a PREFLIGHT PASS pending apparatus review. Burden inside
 every frozen ceiling: 1 carried component (0 patches), 296 first-party
-helper LOC (≤ 2000), no setuid, no file caps, no daemon, no distro branch
-(no private bwrap patches).
+helper LOC (≤ 2000), no setuid, no file caps, no daemon, 1 distro-specific
+implementation branch (Ubuntu/AppArmor integration path, within the frozen
+≤2 ceiling; no private bwrap patches).
 
 Remaining frozen-order items not started: fresh NixOS drift control, Fedora,
 Arch, Ubuntu 24.04, generation independence, H0.5 churn.
