@@ -1,0 +1,143 @@
+{
+  "apparatus": {
+    "containment_argv": [
+      "--inhibit-cache",
+      "--library-path",
+      "/home/lab/h0p-artifact/libexec/lib",
+      "/home/lab/h0p-artifact/libexec/bwrap",
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-user",
+      "--ro-bind",
+      "/home/lab/h0p-artifact/root",
+      "/",
+      "--dev",
+      "/dev",
+      "--proc",
+      "/proc",
+      "--tmpfs",
+      "/tmp",
+      "--ro-bind",
+      "/home/lab/h0p-artifact/app",
+      "/app",
+      "--bind",
+      "/home/lab/h0p-report",
+      "/evidence",
+      "--clearenv",
+      "--setenv",
+      "PATH",
+      "/usr/bin:/bin",
+      "--setenv",
+      "HOME",
+      "/nonexistent",
+      "--setenv",
+      "LD_BIND_NOW",
+      "1",
+      "--setenv",
+      "NEUESTAR_CONTAINED",
+      "1",
+      "--setenv",
+      "NEUESTAR_REPORT_SCHEMA",
+      "neuestar.report/v2",
+      "--setenv",
+      "NEUESTAR_ARCHIVE_SHA256",
+      "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe",
+      "--setenv",
+      "NEUESTAR_PAYLOAD_MANIFEST_SHA256",
+      "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+      "--setenv",
+      "NEUESTAR_SOURCE_COMMIT",
+      "06adad5e83f1e31000bdbb44c693a3ece3dc5a6f",
+      "--setenv",
+      "NEUESTAR_PROBE_VERSION",
+      "0.2.0",
+      "--chdir",
+      "/app",
+      "/app/probe",
+      "--result",
+      "/evidence/child-result.json"
+    ],
+    "probe_sha256": "1e4773c66a09a2395556e7964da29e0d8825aa9d0fe5cb5c81a0004b6431d596"
+  },
+  "attempt": {
+    "integration_source_changed_since_previous": false,
+    "phase": "h0-preflight",
+    "session_id": "2026-08-18T01:16:39Z-1310",
+    "timestamp": "2026-08-18T01:16:39Z"
+  },
+  "burden": {
+    "additional_host_packages": [],
+    "carried_components": [],
+    "distro_branch_count": 0,
+    "helper_loc": 0,
+    "installed_byte_count": 0,
+    "installed_file_count": 0,
+    "installed_files": [],
+    "neuestar_maintained_dependencies": [],
+    "policy_loc": 0,
+    "services": []
+  },
+  "candidate": "none",
+  "classification": "fail",
+  "evidence": {
+    "post_host_state": "probe_parent_user_ns=user:[4026531837]\nprobe_parent_mount_ns=mnt:[4026531841]\nchild_user_ns=unavailable\nchild_mount_ns=unavailable\nchild_mapped_libc=",
+    "pre_host_state": "os_release=ubuntu 24.04 (Ubuntu 24.04.4 LTS)\nkernel=6.8.0-138-generic x86_64\nlsm_raw=lockdown,capability,landlock,yama,apparmor\nartifact_outer_sha256=a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe\nreport_parent=/home/lab/h0p-report\n",
+    "stderr": "bwrap: setting up uid map: Permission denied\n"
+  },
+  "execution": {
+    "child_reached": false,
+    "helper_started": true
+  },
+  "failure": {
+    "code": "child-unreached",
+    "message": "bwrap: setting up uid map: Permission denied\n",
+    "stage": "baseline"
+  },
+  "forbidden_preparation": [],
+  "gates": {
+    "h0_0": "fail",
+    "h0_1": "not-run",
+    "h0_1s": "not-run",
+    "h0_2a": "not-run",
+    "h0_2b": "not-run",
+    "h0_3": "not-run",
+    "h0_4": "not-run",
+    "h0_4r": "not-run",
+    "h0_5": "not-run",
+    "h0_6": "not-run",
+    "h0_p": "not-run"
+  },
+  "host": {
+    "architecture": "x86_64",
+    "distro_id": "ubuntu",
+    "distro_version": "24.04",
+    "kernel_release": "6.8.0-138-generic",
+    "target_profile": {
+      "config_surface": "stock",
+      "iso_snapshot_date": "2026-08-01"
+    }
+  },
+  "integration": {
+    "integration_identity_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "integration_source_sha256": null,
+    "neuestar_integration_package_sha256": null,
+    "security_policy_sha256": null
+  },
+  "privileged_install_operations": [],
+  "runtime": {
+    "application_identity": "neuestar-probe-app",
+    "generation_identity": "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+    "runtime_artifact_sha256": "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe"
+  },
+  "schema": "neuestar.h0/v2",
+  "security_state": {
+    "apparmor": {
+      "loaded_profile_state_sha256": "dae528752dcb82375f994f47f09e8b035563f60716cdf30ce18a6efdf6c78c59",
+      "loaded_profiles": [],
+      "parser_version": "AppArmor parser version 4.0.1\nCopyright (C) 1999-2008 Novell Inc.\nCopyright 2009-2018 Canonical Ltd.",
+      "restriction_sysctl": 1
+    },
+    "lsm": "apparmor"
+  },
+  "trusted_helper": null
+}

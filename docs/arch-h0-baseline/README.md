@@ -16,3 +16,14 @@ Result: **h0_0 = pass**, classification pass; child contained in fresh user
 Interpretation: the zero-preparation minimum user+mount operation succeeds on
 stock Arch (official linux kernel) — no integration needed, like NixOS and
 Fedora; unlike Ubuntu 26.04 (which fails at the UID-map boundary).
+
+Provisioning provenance caveat: the archiso auto-init failed under this boot
+plumb, so the live environment was brought up manually (airootfs.sfs +
+overlay + chroot) and the base was installed with a TEMPORARY
+`SigLevel = Never` pacman config (to bypass a PGP-keyring trust issue in the
+manual chroot). As a result, not every installed package was
+cryptographically authenticated during provisioning. This does not affect
+the H0.0 observation (zero-Neuestar-preparation, measured namespace
+operation succeeded), but it is recorded here for provenance; a future Arch
+rebuild should fix the keyring/trust path instead of disabling signature
+checks.
