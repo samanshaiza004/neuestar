@@ -230,7 +230,13 @@ fn read_os_release() -> std::collections::HashMap<String, String> {
 
 fn read_first_line(path: impl AsRef<Path>) -> Option<String> {
     let content = fs::read_to_string(path).ok()?;
-    content.lines().next().map(str::trim).map(ToOwned::to_owned)
+    // procfs attribute files may end with a NUL terminator; strip it so it
+    // does not leak into recorded evidence.
+    content
+        .lines()
+        .next()
+        .map(|line| line.trim_end_matches('\0').trim())
+        .map(ToOwned::to_owned)
 }
 
 fn read_int(path: impl AsRef<Path>) -> Option<i32> {
