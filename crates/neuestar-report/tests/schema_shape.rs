@@ -14,7 +14,7 @@ fn schema_is_draft_2020_12_with_disallowed_unknown_properties() {
     assert_eq!(root["additionalProperties"], json!(false));
     assert_eq!(
         root["properties"]["schema"]["const"],
-        json!("neuestar.report/v1")
+        json!("neuestar.report/v2")
     );
 }
 
@@ -58,12 +58,45 @@ fn schema_enforces_gate_states_classification_and_rule_caps() {
 }
 
 #[test]
+fn schema_declares_containment_substage_and_bounded_process_stderr() {
+    let root: Value = serde_json::from_str(SCHEMA).unwrap();
+    let containment = &root["$defs"]["containmentEvidence"]["properties"];
+    assert_eq!(
+        containment["substage"]["enum"],
+        json!([
+            "helper-preflight",
+            "helper-execution",
+            "child-result-missing",
+            "child-launch"
+        ])
+    );
+    assert_eq!(containment["process_stderr"]["minLength"], json!(1));
+    assert_eq!(containment["process_stderr"]["maxLength"], json!(4096));
+}
+
+#[test]
+fn frozen_v1_schema_has_no_containment_diagnostics() {
+    let root: Value =
+        serde_json::from_str(include_str!("../../../schema/report-v1.schema.json")).unwrap();
+    assert_eq!(root["$id"], json!("urn:neuestar:report:v1"));
+    assert_eq!(
+        root["properties"]["schema"]["const"],
+        json!("neuestar.report/v1")
+    );
+    let containment = &root["$defs"]["containmentEvidence"]["properties"];
+    assert!(containment.get("substage").is_none());
+    assert!(containment.get("process_stderr").is_none());
+    assert!(containment.get("helper_stderr").is_none());
+}
+
+#[test]
 fn schema_shape_matches_serialized_fixtures() {
     let root: Value = serde_json::from_str(SCHEMA).unwrap();
     let fixtures = [
         include_str!("fixtures/clean_pass.json"),
         include_str!("fixtures/conditional_pass.json"),
         include_str!("fixtures/fail_containment.json"),
+        include_str!("fixtures/containment_failure_v2.json"),
     ];
     for fixture in fixtures {
         let value: Value = serde_json::from_str(fixture).unwrap();

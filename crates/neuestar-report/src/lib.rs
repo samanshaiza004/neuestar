@@ -1,10 +1,12 @@
 //! Versioned machine-readable Gate L0 evidence model.
 //!
-//! This crate defines the `neuestar.report/v1` report, the cross-field
-//! validation rules that keep reports admissible as scientific evidence, and
-//! campaign aggregation checks for the fixed physical matrix. A report that is
-//! malformed, internally contradictory, or claims success without supporting
-//! evidence is rejected rather than repaired.
+//! This crate defines the `neuestar.report` report family — `v1` frozen as the
+//! exact Campaign 001 schema, `v2` the Campaign 002 schema with bounded
+//! containment diagnostics — plus the cross-field validation rules that keep
+//! reports admissible as scientific evidence, and campaign aggregation checks
+//! for the fixed physical matrix. A report that is malformed, internally
+//! contradictory, or claims success without supporting evidence is rejected
+//! rather than repaired.
 
 mod aggregate;
 mod checks;
@@ -14,14 +16,18 @@ pub use aggregate::{CampaignError, validate as validate_campaign};
 pub use checks::{ReportError, validate as validate_report};
 pub use model::{
     Artifact, Campaign, CampaignCell, CaptureEvidence, Classification, ContainmentEvidence,
-    DisplayServer, Distro, DistroSpecificRule, FailureStage, ForbiddenPreparation,
-    ForbiddenPreparationKind, GateResults, GateState, GpuVendor, GraphicsEvidence, LibcSource,
-    MatrixCell, ObservedHost, PresentationEvidence, PresentationTimings, RendererKind, Report,
-    RuntimeEvidence, SchemaVersion, StructuredFailure, VendorSpecificRule,
+    ContainmentSubstage, DisplayServer, Distro, DistroSpecificRule, FailureStage,
+    ForbiddenPreparation, ForbiddenPreparationKind, GateResults, GateState, GpuVendor,
+    GraphicsEvidence, LibcSource, MatrixCell, ObservedHost, PresentationEvidence,
+    PresentationTimings, RendererKind, Report, RuntimeEvidence, SchemaVersion, StructuredFailure,
+    VendorSpecificRule,
 };
 
-/// Current report schema identifier.
-pub const SCHEMA_VERSION: &str = "neuestar.report/v1";
+/// Current report schema identifier (Campaign 002).
+pub const SCHEMA_VERSION: &str = "neuestar.report/v2";
+
+/// Frozen Campaign 001 report schema identifier.
+pub const SCHEMA_VERSION_V1: &str = "neuestar.report/v1";
 
 /// Exact number of frames a passing L0.3 gate must request and present.
 pub const PRESENT_FRAME_COUNT: u32 = 300;

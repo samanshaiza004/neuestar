@@ -1,0 +1,7 @@
+{
+  "schema": "neuestar.h0-child/v1",
+  "user_namespace": "user:[4026532642]",
+  "mount_namespace": "mnt:[4026532641]",
+  "cap_eff_hex": "0000000000000000",
+  "profile_label": "neuestar-bwrap-real//&neuestar-unpriv (enforce)"
+}

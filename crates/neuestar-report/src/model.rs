@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::{SCHEMA_VERSION, VENDOR_RULE_CATEGORY_NVIDIA_DEVICE_NODES};
+use crate::{SCHEMA_VERSION, SCHEMA_VERSION_V1, VENDOR_RULE_CATEGORY_NVIDIA_DEVICE_NODES};
 
 /// Accepted report schema identifiers.
 ///
@@ -11,9 +11,14 @@ use crate::{SCHEMA_VERSION, VENDOR_RULE_CATEGORY_NVIDIA_DEVICE_NODES};
 /// [`Report::validate`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SchemaVersion {
-    /// Version 1 of the Gate L0 report schema.
+    /// Frozen Campaign 001 report schema; rejects the Campaign 002
+    /// containment diagnostics fields.
     #[serde(rename = "neuestar.report/v1")]
     V1,
+    /// Campaign 002 report schema; adds bounded containment diagnostics
+    /// (`substage`, `process_stderr`).
+    #[serde(rename = "neuestar.report/v2")]
+    V2,
 }
 
 impl SchemaVersion {
@@ -21,7 +26,8 @@ impl SchemaVersion {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::V1 => SCHEMA_VERSION,
+            Self::V1 => SCHEMA_VERSION_V1,
+            Self::V2 => SCHEMA_VERSION,
         }
     }
 }
@@ -229,6 +235,25 @@ pub struct ObservedHost {
     pub desktop_session: Option<String>,
 }
 
+/// Where containment failed, when Neuestar can establish it without
+/// interpreting bubblewrap-internal output. These values are derived only from
+/// evidence Neuestar controls (helper start, helper exit status, child result
+/// presence); they are never inferred by string-matching helper stderr.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ContainmentSubstage {
+    /// The bundled helper could not be started (spawn/exec failed).
+    HelperPreflight,
+    /// The bundled helper ran but exited unsuccessfully before the child
+    /// produced a result; the exact point is not further attributed.
+    HelperExecution,
+    /// The helper exited successfully but no child result was produced.
+    ChildResultMissing,
+    /// The child executed and produced a result that was not a successful
+    /// controlled result.
+    ChildLaunch,
+}
+
 /// Evidence for L0.0 namespace construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -254,6 +279,15 @@ pub struct ContainmentEvidence {
     /// Forbidden preparation actions that were actually attempted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forbidden_preparation: Vec<ForbiddenPreparation>,
+    /// Where containment failed, when determinable without helper-internal
+    /// string parsing. Absent when containment never ran or succeeded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub substage: Option<ContainmentSubstage>,
+    /// Bounded UTF-8-lossy prefix of the process stderr stream (the bundled
+    /// helper and, once exec'd, the child), retained on failure and on
+    /// successful runs that produced output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process_stderr: Option<String>,
 }
 
 /// One recorded forbidden preparation action.
@@ -528,7 +562,8 @@ pub enum FailureStage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Report {
-    /// Report schema identifier; must be `neuestar.report/v1`.
+    /// Report schema identifier; must be a supported frozen or current
+    /// version (`neuestar.report/v1` or `neuestar.report/v2`).
     pub schema: SchemaVersion,
     /// Canonical artifact identity.
     pub artifact: Artifact,

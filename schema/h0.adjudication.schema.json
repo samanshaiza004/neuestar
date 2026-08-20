@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neuestar:h0:adjudication:v1",
+  "title": "Neuestar H0 adjudication record",
+  "description": "Append-only machine-readable adjudication of a raw H0 record. The raw observation and the machine interpretation at capture time are immutable; when adversarial or later evidence overrides a machine verdict, the override is recorded here as an adjudication record chained to the raw record and its evidence manifest by SHA-256, never by editing the raw record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "raw_record_sha256",
+    "candidate",
+    "raw_machine_verdict",
+    "adjudicated_verdict",
+    "reason",
+    "evidence_manifest_sha256",
+    "failing_observation",
+    "adjudicated_at"
+  ],
+  "properties": {
+    "schema": {
+      "const": "neuestar.h0.adjudication/v1"
+    },
+    "raw_record_sha256": {
+      "description": "SHA-256 of the exact bytes of the raw H0 record file being adjudicated.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "candidate": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "raw_machine_verdict": {
+      "description": "The verdict the machine record reported at capture time (immutable).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["h0_1", "h0_1s"],
+      "properties": {
+        "h0_1": {
+          "enum": ["pass", "fail", "not-run"]
+        },
+        "h0_1s": {
+          "enum": ["pass", "fail", "not-run"]
+        }
+      }
+    },
+    "adjudicated_verdict": {
+      "description": "The accepted verdict after review of all evidence (append-only override).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["h0_1", "h0_1s"],
+      "properties": {
+        "h0_1": {
+          "enum": ["pass", "fail", "not-run"]
+        },
+        "h0_1s": {
+          "enum": ["pass", "fail", "not-run"]
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "evidence_manifest_sha256": {
+      "description": "SHA-256 over the sorted 'path sha256' lines of the evidence manifest that drove the adjudication.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "failing_observation": {
+      "description": "The exact adversarial observation that failed the gate, as booleans.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unshare", "uid_map", "mount", "pivot_root"],
+      "properties": {
+        "unshare": {
+          "type": "boolean"
+        },
+        "uid_map": {
+          "type": "boolean"
+        },
+        "mount": {
+          "type": "boolean"
+        },
+        "pivot_root": {
+          "type": "boolean"
+        }
+      }
+    },
+    "adjudicated_at": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  }
+}

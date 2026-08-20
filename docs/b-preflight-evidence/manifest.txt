@@ -1,0 +1,7 @@
+0abea81db798ebf6b4742ac0664802d97521547a353c2a0dbdc21d76cbbfd2c0  /usr/bin/bwrap
+d61facde27707b9c47ffe47921b7273e788784484cb5530eb819e6daac1f1990  /etc/apparmor.d/bwrap-userns-restrict
+5126e7369af743fc7515cda8a56881d386ffbc5c665a99c019234b3b69d26ae3  /etc/apparmor.d/neuestar-bwrap
+8d44b2208277fc0ba2241c910f997e1a31285c88be3dbc26ee82109866293230  /home/lab/hostile.so
+/usr/bin/bwrap uid=0 mode=755 size=80424
+2026-08-17T03:53:15Z
+ubuntu-2604-wayland-preflight

@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+neuestar-probe-core = { path = "../neuestar-probe-core" }
 clap.workspace = true
 hex.workspace = true
 libc.workspace = true

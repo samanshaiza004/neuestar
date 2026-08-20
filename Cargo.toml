@@ -2,14 +2,18 @@
 resolver = "2"
 members = [
   "crates/neuestar-elf",
+  "crates/neuestar-entry",
+  "crates/neuestar-h0-check",
+  "crates/neuestar-h0-probe",
   "crates/neuestar-host-inspect",
   "crates/neuestar-probe-app",
+  "crates/neuestar-probe-core",
   "crates/neuestar-probe-launcher",
   "crates/neuestar-report",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/neuestar/neuestar"
@@ -20,6 +24,7 @@ anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 goblin = "0.10"
 hex = "0.4"
+jsonschema = "0.26"
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -36,3 +41,9 @@ missing_docs = "warn"
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"

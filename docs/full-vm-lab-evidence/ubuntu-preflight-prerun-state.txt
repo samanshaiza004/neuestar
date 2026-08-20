@@ -1,0 +1,11 @@
+Warning: Permanently added '192.168.122.115' (ED25519) to the list of known hosts.
+id: uid=1000(lab) gid=1000(lab) groups=1000(lab)
+uname: Linux ubuntu-2604-lab 7.0.0-28-generic #28-Ubuntu SMP PREEMPT_DYNAMIC Sun Jun 21 01:01:36 UTC 2026 x86_64 GNU/Linux
+userns sysctls:
+kernel.unprivileged_userns_clone = 1
+kernel.apparmor_restrict_unprivileged_userns = 1
+apparmor status:
+Y
+ns of shell:
+user:[4026531837]
+mnt:[4026531832]

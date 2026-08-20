@@ -18,6 +18,21 @@ vendor documentation; downstream blogs are not used as implementation truth.
   Ubuntu's AppArmor mediation can deny user namespaces to unprofiled downloaded
   programs. Requiring a shipped system AppArmor profile or policy change is
   non-clean under L0.0, so denial must be reported rather than bypassed.
+- [AppArmor `bwrap-userns-restrict` profile](https://gitlab.com/apparmor/apparmor/-/blob/master/profiles/apparmor/profiles/extras/bwrap-userns-restrict)
+  (verified 2026-08-16): the profile is attached to `profile bwrap
+  /usr/bin/bwrap` and explicitly grants `userns`, `mount`, `umount`,
+  `pivot_root`, and capabilities, then stacks the `unpriv_bwrap` profile on
+  children to deny capabilities inside the namespace. The permission is bound
+  to the system-installed executable path, not to an arbitrary downloaded
+  bubblewrap.
+- [Ubuntu unprivileged userns restriction is enabled by default since
+  24.04](https://wiki.ubuntu.com/Security/Features) and the
+  `bwrap-userns-restrict` profile ships in Ubuntu's AppArmor packaging since
+  25.04 so the distro bubblewrap can run. An artifact-relative bundled
+  bubblewrap receives none of that policy; under the frozen zero-preparation
+  extracted-artifact contract this is a recorded L0.0 denial, not a policy
+  change request (verified against the Campaign 002 full-VM run on Ubuntu
+  26.04: `bwrap: setting up uid map: Permission denied`).
 
 ## Vulkan and driver boundary
 

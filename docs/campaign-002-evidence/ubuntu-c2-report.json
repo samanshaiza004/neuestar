@@ -1,0 +1,74 @@
+{
+  "schema": "neuestar.report/v2",
+  "artifact": {
+    "outer_archive_sha256": "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe",
+    "payload_manifest_sha256": "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+    "source_commit": "06adad5e83f1e31000bdbb44c693a3ece3dc5a6f",
+    "probe_version": "0.2.0"
+  },
+  "matrix_cell": {
+    "distro": "ubuntu-lts",
+    "gpu_vendor": "nvidia",
+    "display_server": "wayland"
+  },
+  "observed_host": {
+    "distro_id": "ubuntu:26.04",
+    "distro_version": "26.04",
+    "kernel_release": "7.0.0-29-generic",
+    "architecture": "x86_64",
+    "gpu_description": "not-observed-phase-1",
+    "display_server": "wayland",
+    "current_desktop": "ubuntu:GNOME",
+    "desktop_session": "ubuntu"
+  },
+  "containment": {
+    "namespace_constructed": false,
+    "user_namespace_constructed": false,
+    "mount_namespace_constructed": false,
+    "substage": "helper-execution",
+    "process_stderr": "bwrap: setting up uid map: Permission denied\n"
+  },
+  "runtime": {
+    "libc_source": "not-determined",
+    "host_glibc_imported": false
+  },
+  "graphics": {
+    "renderer": "not-determined",
+    "renderer_description": "not-run-phase-1",
+    "device": "not-run-phase-1",
+    "software_renderer_detected": false,
+    "vendor_specific_rules": [
+      {
+        "category": "nvidia-device-nodes",
+        "description": "Expose only concrete NVIDIA device nodes discovered on the physical host"
+      }
+    ]
+  },
+  "presentation": {
+    "frames_requested": 0,
+    "frames_presented": 0,
+    "validation_errors": 0,
+    "device_loss": false
+  },
+  "capture": {
+    "capture_rule_sha256": "6f71fc1be6700a767903a4509cbdcd5e7a8eee297e31e3df7ea390938edfc355",
+    "dependency_count": 0,
+    "vendor_specific_rule_count": 1,
+    "distro_specific_rule_count": 0,
+    "host_path_count": 0
+  },
+  "gates": {
+    "l0_0_containment": "fail",
+    "l0_1_launch": "not-run",
+    "l0_2_acceleration": "not-run",
+    "l0_3_present": "not-run",
+    "l0_4_churn": "not-run",
+    "l0_5_maintenance": "not-run"
+  },
+  "classification": "fail",
+  "failure": {
+    "stage": "containment",
+    "code": "containment-failed",
+    "message": "bubblewrap or child exited with status 1"
+  }
+}

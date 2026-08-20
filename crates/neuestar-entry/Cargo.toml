@@ -1,0 +1,10 @@
+[package]
+name = "neuestar-entry"
+version = "0.2.0"
+edition = "2021"
+description = "Candidate A2a: static privilege-entry gate for the H0 Installed Substrate experiment"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+libc = "0.2"
+serde_json = "1"

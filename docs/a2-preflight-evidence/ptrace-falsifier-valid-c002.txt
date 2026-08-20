@@ -1,0 +1,4 @@
+exec1 (entry) label: unconfined
+exec2 (bwrap-real) label: neuestar-entry (enforce)
+injected unshare -> -13
+label after unshare: neuestar-entry (enforce)

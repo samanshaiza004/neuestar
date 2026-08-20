@@ -1,0 +1,70 @@
+{
+  "schema": "neuestar.report/v1",
+  "artifact": {
+    "outer_archive_sha256": "02a4b6d3b04b37e8c8284bee15746b8365d7cdb4561b7eab405ba381886a68e7",
+    "payload_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "source_commit": "0000000000000000000000000000000000000000",
+    "probe_version": "0.1.0"
+  },
+  "matrix_cell": {
+    "distro": "ubuntu-lts",
+    "gpu_vendor": "nvidia",
+    "display_server": "wayland"
+  },
+  "observed_host": {
+    "distro_id": "ubuntu:26.04",
+    "distro_version": "26.04",
+    "kernel_release": "7.0.0-28-generic",
+    "architecture": "x86_64",
+    "gpu_description": "not-observed-phase-1",
+    "display_server": "tty"
+  },
+  "containment": {
+    "namespace_constructed": false,
+    "user_namespace_constructed": false,
+    "mount_namespace_constructed": false
+  },
+  "runtime": {
+    "libc_source": "not-determined",
+    "host_glibc_imported": false
+  },
+  "graphics": {
+    "renderer": "not-determined",
+    "renderer_description": "not-run-phase-1",
+    "device": "not-run-phase-1",
+    "software_renderer_detected": false,
+    "vendor_specific_rules": [
+      {
+        "category": "nvidia-device-nodes",
+        "description": "Expose only concrete NVIDIA device nodes discovered on the physical host"
+      }
+    ]
+  },
+  "presentation": {
+    "frames_requested": 0,
+    "frames_presented": 0,
+    "validation_errors": 0,
+    "device_loss": false
+  },
+  "capture": {
+    "capture_rule_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "dependency_count": 0,
+    "vendor_specific_rule_count": 1,
+    "distro_specific_rule_count": 0,
+    "host_path_count": 0
+  },
+  "gates": {
+    "l0_0_containment": "fail",
+    "l0_1_launch": "not-run",
+    "l0_2_acceleration": "not-run",
+    "l0_3_present": "not-run",
+    "l0_4_churn": "not-run",
+    "l0_5_maintenance": "not-run"
+  },
+  "classification": "fail",
+  "failure": {
+    "stage": "preflight",
+    "code": "preflight-failed",
+    "message": "artifact contains an unmanifested file: report.json"
+  }
+}

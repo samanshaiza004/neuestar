@@ -1,28 +1,31 @@
 //! Static musl launcher for Phase 1 and Gate L0.0 containment evidence.
 
-use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read};
-use std::path::{Component, Path, PathBuf};
-use std::process::{Command, ExitCode, ExitStatus};
+use std::io::{BufReader, Read};
+use std::path::{Path, PathBuf};
+use std::process::{ChildStderr, Command, ExitCode, ExitStatus, Stdio};
+use std::thread;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, ValueEnum};
 use neuestar_host_inspect::HostMetadata;
-use neuestar_report::{
-    Artifact, CaptureEvidence, Classification, ContainmentEvidence, DisplayServer, Distro,
-    FailureStage, GateResults, GateState, GpuVendor, GraphicsEvidence, LibcSource, MatrixCell,
-    ObservedHost, PresentationEvidence, RendererKind, Report, RuntimeEvidence, SchemaVersion,
-    StructuredFailure, VendorSpecificRule,
+use neuestar_probe_core::artifact::{ArtifactMetadata, valid_sha256};
+use neuestar_probe_core::child_result::{
+    ChildResult, namespace_changed, read_child_result, valid_successful_child_result,
 };
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use neuestar_report::{
+    Artifact, CaptureEvidence, Classification, ContainmentEvidence, ContainmentSubstage,
+    DisplayServer, Distro, FailureStage, GateResults, GateState, GpuVendor, GraphicsEvidence,
+    LibcSource, MatrixCell, ObservedHost, PresentationEvidence, RendererKind, Report,
+    RuntimeEvidence, SchemaVersion, StructuredFailure, VendorSpecificRule,
+};
+use serde::Serialize;
 
 const EXIT_VERIFY: u8 = 65;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_CONTAINMENT: u8 = 71;
-const MAX_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
-const MAX_MANIFEST_ENTRIES: usize = 4096;
+const PROCESS_STDERR_MAX_BYTES: usize = 64 * 1024;
+const PROCESS_STDERR_MAX_CHARS: usize = 4096;
 const UNKNOWN_SHA256: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const UNKNOWN_SOURCE_COMMIT: &str = "0000000000000000000000000000000000000000";
 
@@ -79,37 +82,6 @@ enum CliDisplay {
     X11,
 }
 
-#[derive(Debug, Deserialize)]
-struct ArtifactMetadata {
-    schema: String,
-    artifact_sha256: String,
-    payload_manifest_sha256: String,
-    source_commit: String,
-    probe_version: String,
-    runtime_root_manifest_sha256: String,
-    capture_rule_sha256: String,
-    child_interpreter: String,
-    controlled_libc_version: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChildResult {
-    schema: String,
-    contained: bool,
-    launch_reached_main: bool,
-    architecture: String,
-    user_namespace: String,
-    mount_namespace: String,
-    mapped_libc_paths: Vec<String>,
-    failure: Option<ChildFailure>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChildFailure {
-    code: String,
-    explanation: String,
-}
-
 #[derive(Debug, Serialize)]
 struct CapturePlan {
     schema: &'static str,
@@ -153,7 +125,7 @@ fn run(cli: &Cli) -> Result<u8> {
         }
     };
 
-    let metadata = match verify_payload(&artifact_root) {
+    let metadata = match neuestar_probe_core::artifact::verify_payload(&artifact_root) {
         Ok(metadata) => metadata,
         Err(error) => {
             write_bootstrap_failure(
@@ -261,6 +233,13 @@ fn validated_archive_hash<'a>(
     }
 }
 
+fn namespace_identity(path: &str) -> String {
+    fs::read_link(path).map_or_else(
+        |_| "unavailable".to_owned(),
+        |identity| identity.display().to_string(),
+    )
+}
+
 fn execute_contained(
     cli: &Cli,
     artifact_root: &Path,
@@ -284,20 +263,30 @@ fn execute_contained(
     }
 
     let child_result_path = report_parent.join("child-result.json");
+    if reject_stale_evidence(
+        &child_result_path,
+        &cli.report,
+        archive_sha256,
+        metadata,
+        matrix_cell,
+        host,
+    )? {
+        return Ok(EXIT_VERIFY);
+    }
     let parent_user_namespace = namespace_identity("/proc/self/ns/user");
     let parent_mount_namespace = namespace_identity("/proc/self/ns/mnt");
     let mut command = contained_command(report_parent, artifact_root, archive_sha256, metadata);
-    let status = match command.status() {
-        Ok(status) => status,
-        Err(error) => {
-            write_bootstrap_failure(
+    let (status, process_stderr) = match run_helper(&mut command) {
+        Ok(pair) => pair,
+        Err((substage, error)) => {
+            write_helper_failure(
                 &cli.report,
                 archive_sha256,
-                Some(metadata),
+                metadata,
                 matrix_cell,
                 host,
-                FailureStage::Containment,
-                &format!("failed to execute bundled bubblewrap: {error}"),
+                substage,
+                &error,
             )?;
             return Ok(EXIT_CONTAINMENT);
         }
@@ -308,59 +297,34 @@ fn execute_contained(
             valid_successful_child_result(result, &parent_user_namespace, &parent_mount_namespace)
         })
     {
-        let mut report = phase_one_report(
+        write_success_report(
+            &cli.report,
             archive_sha256,
             metadata,
             matrix_cell,
             host,
+            artifact_root,
+            report_parent,
             child_result.as_ref().expect("checked above"),
-        );
-        record_host_paths(&mut report, artifact_root, report_parent);
-        report.validate().context("generated report is invalid")?;
-        write_json(&cli.report, &report)?;
+            process_stderr,
+        )?;
         return Ok(0);
     }
 
-    let detail = child_failure_detail(status, child_result.as_ref());
-    let containment_constructed = child_result.as_ref().is_some_and(|result| {
-        result.contained
-            && namespace_changed(&result.user_namespace, &parent_user_namespace, "user:")
-            && namespace_changed(&result.mount_namespace, &parent_mount_namespace, "mnt:")
-    });
-    let failure_stage = if containment_constructed {
-        FailureStage::Launch
-    } else {
-        FailureStage::Containment
-    };
-    let mut report = failure_report(
+    write_failure_report(
+        &cli.report,
         archive_sha256,
-        Some(metadata),
+        metadata,
         matrix_cell,
         host,
-        failure_stage,
-        &detail,
-    );
-    if containment_constructed {
-        report.containment.namespace_constructed = true;
-        report.containment.user_namespace_constructed = true;
-        report.containment.mount_namespace_constructed = true;
-        report.containment.user_namespace_id = child_result
-            .as_ref()
-            .map(|result| result.user_namespace.clone());
-        report.containment.mount_namespace_id = child_result
-            .as_ref()
-            .map(|result| result.mount_namespace.clone());
-        report.gates.l0_0_containment = GateState::Pass;
-        report.gates.l0_1_launch = GateState::Fail;
-        if let Some(result) = child_result {
-            report.runtime.loader_diagnostics = result.mapped_libc_paths;
-        }
-        record_host_paths(&mut report, artifact_root, report_parent);
-    }
-    report
-        .validate()
-        .context("generated failure report is invalid")?;
-    write_json(&cli.report, &report)?;
+        artifact_root,
+        report_parent,
+        status,
+        child_result.as_ref(),
+        &parent_user_namespace,
+        &parent_mount_namespace,
+        process_stderr,
+    )?;
     Ok(EXIT_CONTAINMENT)
 }
 
@@ -375,14 +339,14 @@ fn containment_preflight(artifact_root: &Path) -> Result<()> {
             bail!("required member is missing: {}", required.display());
         }
     }
-    verify_bundled_helper_resolution(artifact_root)
+    neuestar_probe_core::helper::verify_bundled_helper_resolution(artifact_root)
         .context("bundled bubblewrap closure is not self-contained")
 }
 
 fn record_host_paths(report: &mut Report, artifact_root: &Path, report_parent: &Path) {
     report.containment.host_paths_exposed = vec![
         artifact_root.join("root").display().to_string(),
-        artifact_root.join("app/probe").display().to_string(),
+        artifact_root.join("app").display().to_string(),
         report_parent.display().to_string(),
     ];
     report.capture.host_path_count = 3;
@@ -394,122 +358,14 @@ fn contained_command(
     archive_sha256: &str,
     metadata: &ArtifactMetadata,
 ) -> Command {
-    let mut command = Command::new(artifact_root.join("libexec/ld-linux-x86-64.so.2"));
-    command
-        .env_clear()
-        .env("LANG", "C")
-        .env("LC_ALL", "C")
-        .env("LD_BIND_NOW", "1")
-        .arg("--inhibit-cache")
-        .arg("--library-path")
-        .arg(artifact_root.join("libexec/lib"))
-        .arg(artifact_root.join("libexec/bwrap"))
-        .args([
-            "--die-with-parent",
-            "--new-session",
-            "--unshare-user",
-            "--unshare-pid",
-            "--unshare-ipc",
-            "--unshare-uts",
-            "--unshare-net",
-            "--ro-bind",
-        ])
-        .arg(artifact_root.join("root"))
-        .arg("/")
-        .args(["--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"])
-        .arg("--ro-bind")
-        .arg(artifact_root.join("app/probe"))
-        .arg("/app/probe")
-        .arg("--bind")
-        .arg(report_parent)
-        .arg("/evidence")
-        .args([
-            "--clearenv",
-            "--setenv",
-            "PATH",
-            "/usr/bin:/bin",
-            "--setenv",
-            "HOME",
-            "/nonexistent",
-            "--setenv",
-            "LD_BIND_NOW",
-            "1",
-            "--setenv",
-            "NEUESTAR_CONTAINED",
-            "1",
-            "--setenv",
-            "NEUESTAR_REPORT_SCHEMA",
-            "neuestar.report/v1",
-            "--setenv",
-            "NEUESTAR_ARCHIVE_SHA256",
-        ])
-        .arg(archive_sha256)
-        .args(["--setenv", "NEUESTAR_PAYLOAD_MANIFEST_SHA256"])
-        .arg(&metadata.payload_manifest_sha256)
-        .args(["--setenv", "NEUESTAR_SOURCE_COMMIT"])
-        .arg(&metadata.source_commit)
-        .args(["--setenv", "NEUESTAR_PROBE_VERSION"])
-        .arg(&metadata.probe_version)
-        .args(["--chdir", "/app", "/app/probe", "--result"])
-        .arg("/evidence/child-result.json")
-        .current_dir(artifact_root);
-    command
-}
-
-fn verify_bundled_helper_resolution(artifact_root: &Path) -> Result<()> {
-    let loader = artifact_root.join("libexec/ld-linux-x86-64.so.2");
-    let helper = artifact_root.join("libexec/bwrap");
-    let helper_lib = artifact_root.join("libexec/lib");
-    let output = Command::new(&loader)
-        .env_clear()
-        .env("LANG", "C")
-        .env("LC_ALL", "C")
-        .env("LD_BIND_NOW", "1")
-        .args(["--inhibit-cache", "--library-path"])
-        .arg(&helper_lib)
-        .arg("--list")
-        .arg(&helper)
-        .output()
-        .context("failed to inspect bundled bubblewrap dependency resolution")?;
-    if !output.status.success() {
-        bail!(
-            "dynamic loader --list failed: {}",
-            bounded_message(&String::from_utf8_lossy(&output.stderr))
-        );
-    }
-    validate_helper_list(
-        &String::from_utf8(output.stdout).context("loader list output is not UTF-8")?,
-        &loader,
-        &helper,
-        &helper_lib,
+    neuestar_probe_core::command::contained_command(
+        report_parent,
+        artifact_root,
+        archive_sha256,
+        metadata,
+        &neuestar_probe_core::command::frozen_helper_invocation(artifact_root),
+        &neuestar_probe_core::command::frozen_child_exec(),
     )
-}
-
-fn validate_helper_list(
-    output: &str,
-    loader: &Path,
-    helper: &Path,
-    helper_lib: &Path,
-) -> Result<()> {
-    for line in output.lines() {
-        if line.contains("=> not found") {
-            bail!("unresolved helper dependency: {line}");
-        }
-        let candidate = line
-            .split_once("=>")
-            .map_or(line, |(_, resolved)| resolved)
-            .split_whitespace()
-            .next()
-            .unwrap_or_default();
-        if !candidate.starts_with('/') {
-            continue;
-        }
-        let path = Path::new(candidate);
-        if path != loader && path != helper && !path.starts_with(helper_lib) {
-            bail!("helper resolved a host path: {candidate}");
-        }
-    }
-    Ok(())
 }
 
 fn capture_plan(cli: &Cli, artifact_root: &Path, report_parent: &Path) -> CapturePlan {
@@ -517,12 +373,12 @@ fn capture_plan(cli: &Cli, artifact_root: &Path, report_parent: &Path) -> Captur
         schema: "neuestar.capture-plan/v1",
         helper: artifact_root.join("libexec/bwrap").display().to_string(),
         runtime_root: artifact_root.join("root").display().to_string(),
-        application: artifact_root.join("app/probe").display().to_string(),
+        application: artifact_root.join("app").display().to_string(),
         writable_evidence_directory: report_parent.display().to_string(),
-        namespaces: vec!["user", "mount", "pid", "ipc", "uts", "network"],
+        namespaces: vec!["user", "mount"],
         host_paths_exposed: vec![
             artifact_root.join("root").display().to_string(),
-            artifact_root.join("app/probe").display().to_string(),
+            artifact_root.join("app").display().to_string(),
             report_parent.display().to_string(),
         ],
         vendor_specific_rules: if matches!(cli.gpu, CliGpu::Nvidia) {
@@ -699,7 +555,7 @@ fn failure_report(
     message: &str,
 ) -> Report {
     Report {
-        schema: SchemaVersion::V1,
+        schema: SchemaVersion::V2,
         artifact: artifact_evidence(archive_sha256, metadata),
         matrix_cell,
         observed_host: observed_host(host),
@@ -712,6 +568,8 @@ fn failure_report(
             errno: None,
             host_paths_exposed: Vec::new(),
             forbidden_preparation: Vec::new(),
+            substage: None,
+            process_stderr: None,
         },
         runtime: RuntimeEvidence {
             libc_source: LibcSource::NotDetermined,
@@ -823,58 +681,6 @@ fn bounded_message(message: &str) -> String {
     message.chars().take(2048).collect()
 }
 
-fn read_child_result(path: &Path) -> Result<ChildResult> {
-    let metadata =
-        fs::metadata(path).with_context(|| format!("child did not produce {}", path.display()))?;
-    if metadata.len() > 1024 * 1024 {
-        bail!("child result exceeds 1 MiB");
-    }
-    let result: ChildResult =
-        serde_json::from_reader(File::open(path)?).context("child result is malformed")?;
-    if result.schema != "neuestar.child/v1"
-        || result.architecture.is_empty()
-        || result.architecture.len() > 32
-        || result.user_namespace.len() > 128
-        || result.mount_namespace.len() > 128
-        || result.mapped_libc_paths.len() > 16
-        || result
-            .mapped_libc_paths
-            .iter()
-            .any(|path| path.len() > 1024 || !path.starts_with('/'))
-    {
-        bail!("child result violates its bounded schema");
-    }
-    Ok(result)
-}
-
-fn valid_successful_child_result(
-    result: &ChildResult,
-    parent_user_namespace: &str,
-    parent_mount_namespace: &str,
-) -> bool {
-    result.contained
-        && result.launch_reached_main
-        && result.architecture == "x86_64"
-        && namespace_changed(&result.user_namespace, parent_user_namespace, "user:")
-        && namespace_changed(&result.mount_namespace, parent_mount_namespace, "mnt:")
-        && result.failure.is_none()
-        && result
-            .mapped_libc_paths
-            .iter()
-            .any(|path| path.contains("libc.so"))
-}
-
-fn namespace_identity(path: &str) -> String {
-    fs::read_link(path).map_or_else(
-        |_| "unavailable".to_owned(),
-        |identity| identity.display().to_string(),
-    )
-}
-
-fn namespace_changed(child: &str, parent: &str, prefix: &str) -> bool {
-    child.starts_with(prefix) && parent.starts_with(prefix) && child != parent
-}
-
 fn child_failure_detail(status: ExitStatus, result: Option<&ChildResult>) -> String {
     if let Some(failure) = result.and_then(|value| value.failure.as_ref()) {
         return bounded_message(&format!("{}: {}", failure.code, failure.explanation));
@@ -883,6 +689,219 @@ fn child_failure_detail(status: ExitStatus, result: Option<&ChildResult>) -> Str
         Some(code) => format!("bubblewrap or child exited with status {code}"),
         None => "bubblewrap or child terminated by signal".to_owned(),
     }
+}
+
+fn containment_substage(
+    status: ExitStatus,
+    child_result: Option<&ChildResult>,
+) -> ContainmentSubstage {
+    match child_result {
+        Some(_) => ContainmentSubstage::ChildLaunch,
+        None if status.success() => ContainmentSubstage::ChildResultMissing,
+        None => ContainmentSubstage::HelperExecution,
+    }
+}
+
+fn run_helper(
+    command: &mut Command,
+) -> Result<(ExitStatus, Option<String>), (ContainmentSubstage, anyhow::Error)> {
+    command.stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| {
+        (
+            ContainmentSubstage::HelperPreflight,
+            anyhow::Error::new(error).context("failed to spawn bundled bubblewrap"),
+        )
+    })?;
+    let stderr_thread = child
+        .stderr
+        .take()
+        .map(|stderr| thread::spawn(move || capture_process_stderr(stderr)));
+    let status = child.wait().map_err(|error| {
+        (
+            ContainmentSubstage::HelperExecution,
+            anyhow::Error::new(error).context("failed to wait for bundled bubblewrap"),
+        )
+    })?;
+    let process_stderr = stderr_thread
+        .and_then(|handle| handle.join().ok())
+        .flatten();
+    Ok((status, process_stderr))
+}
+
+/// Drains the helper/child stderr stream to EOF while retaining only a bounded
+/// UTF-8-lossy prefix, so the recorder never stops consuming the pipe and
+/// cannot perturb the measured process.
+fn capture_process_stderr(stderr: ChildStderr) -> Option<String> {
+    let mut reader = BufReader::new(stderr);
+    let mut retained: Vec<u8> = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) if retained.len() < PROCESS_STDERR_MAX_BYTES => {
+                let room = PROCESS_STDERR_MAX_BYTES - retained.len();
+                retained.extend_from_slice(&chunk[..n.min(room)]);
+            }
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+    }
+    let text = String::from_utf8_lossy(&retained);
+    let bounded: String = text.chars().take(PROCESS_STDERR_MAX_CHARS).collect();
+    (!bounded.is_empty()).then_some(bounded)
+}
+
+/// Refuses to start an attempt whose evidence directory already contains a
+/// child result from an earlier attempt; historical files must never
+/// influence a current classification.
+fn ensure_fresh_evidence(child_result_path: &Path) -> Result<()> {
+    if child_result_path.exists() {
+        bail!(
+            "evidence directory is not fresh: {} already exists; use a fresh evidence directory",
+            child_result_path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Writes the preflight rejection for a contaminated evidence directory and
+/// reports whether the attempt must stop before helper execution.
+fn reject_stale_evidence(
+    child_result_path: &Path,
+    report_path: &Path,
+    archive_sha256: &str,
+    metadata: &ArtifactMetadata,
+    matrix_cell: MatrixCell,
+    host: &HostMetadata,
+) -> Result<bool> {
+    match ensure_fresh_evidence(child_result_path) {
+        Ok(()) => Ok(false),
+        Err(error) => {
+            write_bootstrap_failure(
+                report_path,
+                archive_sha256,
+                Some(metadata),
+                matrix_cell,
+                host,
+                FailureStage::Preflight,
+                &format!("{error:#}"),
+            )?;
+            Ok(true)
+        }
+    }
+}
+
+/// Writes the containment failure report for a helper that could not start or
+/// could not be waited on, using the substage the launcher can prove.
+fn write_helper_failure(
+    report_path: &Path,
+    archive_sha256: &str,
+    metadata: &ArtifactMetadata,
+    matrix_cell: MatrixCell,
+    host: &HostMetadata,
+    substage: ContainmentSubstage,
+    error: &anyhow::Error,
+) -> Result<()> {
+    let mut report = failure_report(
+        archive_sha256,
+        Some(metadata),
+        matrix_cell,
+        host,
+        FailureStage::Containment,
+        &format!("failed to run bundled bubblewrap: {error:#}"),
+    );
+    report.containment.substage = Some(substage);
+    report
+        .validate()
+        .context("generated failure report is invalid")?;
+    write_json(report_path, &report)
+}
+
+// Run-context threading mirrors the existing report writers (failure_report,
+// write_bootstrap_failure); the parameters are deliberately not folded into a
+// struct to keep this diff scoped to the containment fixes.
+#[allow(clippy::too_many_arguments)]
+fn write_success_report(
+    report_path: &Path,
+    archive_sha256: &str,
+    metadata: &ArtifactMetadata,
+    matrix_cell: MatrixCell,
+    host: &HostMetadata,
+    artifact_root: &Path,
+    report_parent: &Path,
+    child: &ChildResult,
+    process_stderr: Option<String>,
+) -> Result<()> {
+    let mut report = phase_one_report(archive_sha256, metadata, matrix_cell, host, child);
+    if let Some(stderr) = process_stderr {
+        report.containment.process_stderr = Some(stderr);
+    }
+    record_host_paths(&mut report, artifact_root, report_parent);
+    report.validate().context("generated report is invalid")?;
+    write_json(report_path, &report)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_failure_report(
+    report_path: &Path,
+    archive_sha256: &str,
+    metadata: &ArtifactMetadata,
+    matrix_cell: MatrixCell,
+    host: &HostMetadata,
+    artifact_root: &Path,
+    report_parent: &Path,
+    status: ExitStatus,
+    child_result: Option<&ChildResult>,
+    parent_user_namespace: &str,
+    parent_mount_namespace: &str,
+    process_stderr: Option<String>,
+) -> Result<()> {
+    let substage = containment_substage(status, child_result);
+    let detail = child_failure_detail(status, child_result);
+    let containment_constructed = child_result.is_some_and(|result| {
+        result.contained
+            && namespace_changed(&result.user_namespace, parent_user_namespace, "user:")
+            && namespace_changed(&result.mount_namespace, parent_mount_namespace, "mnt:")
+    });
+    let failure_stage = if containment_constructed {
+        FailureStage::Launch
+    } else {
+        FailureStage::Containment
+    };
+    let mut report = failure_report(
+        archive_sha256,
+        Some(metadata),
+        matrix_cell,
+        host,
+        failure_stage,
+        &detail,
+    );
+    report.containment.substage = Some(substage);
+    if let Some(stderr) = process_stderr {
+        report.containment.process_stderr = Some(stderr);
+    }
+    if containment_constructed {
+        report.containment.namespace_constructed = true;
+        report.containment.user_namespace_constructed = true;
+        report.containment.mount_namespace_constructed = true;
+        report.containment.user_namespace_id =
+            child_result.map(|result| result.user_namespace.clone());
+        report.containment.mount_namespace_id =
+            child_result.map(|result| result.mount_namespace.clone());
+        report.gates.l0_0_containment = GateState::Pass;
+        report.gates.l0_1_launch = GateState::Fail;
+        if let Some(result) = child_result {
+            report
+                .runtime
+                .loader_diagnostics
+                .clone_from(&result.mapped_libc_paths);
+        }
+        record_host_paths(&mut report, artifact_root, report_parent);
+    }
+    report
+        .validate()
+        .context("generated failure report is invalid")?;
+    write_json(report_path, &report)
 }
 
 fn prepare_report_parent(report: &Path) -> Result<PathBuf> {
@@ -895,201 +914,6 @@ fn prepare_report_parent(report: &Path) -> Result<PathBuf> {
     parent
         .canonicalize()
         .with_context(|| format!("failed to resolve report directory {}", parent.display()))
-}
-
-fn verify_payload(root: &Path) -> Result<ArtifactMetadata> {
-    let manifest_path = root.join("SHA256SUMS");
-    let manifest_metadata = fs::metadata(&manifest_path)
-        .with_context(|| format!("missing {}", manifest_path.display()))?;
-    if manifest_metadata.len() > MAX_MANIFEST_BYTES {
-        bail!("payload manifest exceeds {MAX_MANIFEST_BYTES} bytes");
-    }
-
-    let file = File::open(&manifest_path)?;
-    let reader = BufReader::new(file);
-    let mut paths = HashSet::new();
-    let mut entry_count = 0_usize;
-    for (line_number, line) in reader.lines().enumerate() {
-        let line =
-            line.with_context(|| format!("failed to read manifest line {}", line_number + 1))?;
-        let (expected, raw_path) = line
-            .split_once("  ")
-            .ok_or_else(|| anyhow!("malformed manifest line {}", line_number + 1))?;
-        if !valid_sha256(expected) {
-            bail!("invalid hash on manifest line {}", line_number + 1);
-        }
-        let relative = raw_path.strip_prefix("./").unwrap_or(raw_path);
-        let path = Path::new(relative);
-        if !safe_relative_path(path) {
-            bail!("unsafe manifest path on line {}", line_number + 1);
-        }
-        if !paths.insert(path.to_path_buf()) {
-            bail!("duplicate manifest path: {}", path.display());
-        }
-        entry_count += 1;
-        if entry_count > MAX_MANIFEST_ENTRIES {
-            bail!("payload manifest has too many entries");
-        }
-        let actual = sha256_file(&root.join(path))?;
-        if actual != expected {
-            bail!("payload hash mismatch for {}", path.display());
-        }
-    }
-    if entry_count == 0 {
-        bail!("payload manifest is empty");
-    }
-    for required in [
-        "neuestar-probe",
-        "app/probe",
-        "libexec/bwrap",
-        "libexec/ld-linux-x86-64.so.2",
-        "runtime.toml",
-        "capture-rules.json",
-        "rootfs.SHA256SUMS",
-    ] {
-        if !paths.contains(Path::new(required)) {
-            bail!("payload manifest omits required member {required}");
-        }
-    }
-    verify_manifest_completeness(root, &paths)?;
-
-    verify_metadata(root, &paths, &sha256_file(&manifest_path)?)
-}
-
-fn verify_manifest_completeness(root: &Path, paths: &HashSet<PathBuf>) -> Result<()> {
-    let mut pending = vec![root.to_path_buf()];
-    let mut entries = 0_usize;
-    while let Some(directory) = pending.pop() {
-        for entry in fs::read_dir(&directory)? {
-            let entry = entry?;
-            let metadata = fs::symlink_metadata(entry.path())?;
-            entries += 1;
-            if entries > MAX_MANIFEST_ENTRIES * 4 {
-                bail!("artifact filesystem has too many entries");
-            }
-            if metadata.file_type().is_symlink() {
-                bail!("artifact contains a symlink: {}", entry.path().display());
-            }
-            if metadata.is_dir() {
-                pending.push(entry.path());
-                continue;
-            }
-            if !metadata.is_file() {
-                bail!(
-                    "artifact contains a special file: {}",
-                    entry.path().display()
-                );
-            }
-            let relative = entry.path().strip_prefix(root)?.to_path_buf();
-            if relative != Path::new("artifact.json")
-                && relative != Path::new("SHA256SUMS")
-                && !paths.contains(&relative)
-            {
-                bail!(
-                    "artifact contains an unmanifested file: {}",
-                    relative.display()
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-fn verify_metadata(
-    root: &Path,
-    paths: &HashSet<PathBuf>,
-    manifest_hash: &str,
-) -> Result<ArtifactMetadata> {
-    let metadata_path = root.join("artifact.json");
-    let metadata: ArtifactMetadata = serde_json::from_reader(
-        File::open(&metadata_path)
-            .with_context(|| format!("missing {}", metadata_path.display()))?,
-    )
-    .context("artifact.json is malformed")?;
-    if metadata.schema != "neuestar.artifact/v1" {
-        bail!("unsupported artifact metadata schema: {}", metadata.schema);
-    }
-    if metadata.payload_manifest_sha256 != manifest_hash
-        || metadata.artifact_sha256 != manifest_hash
-    {
-        bail!("artifact identity does not match SHA256SUMS");
-    }
-    if !valid_sha256(&metadata.runtime_root_manifest_sha256) {
-        bail!("runtime root manifest hash is malformed");
-    }
-    if sha256_file(&root.join("rootfs.SHA256SUMS"))? != metadata.runtime_root_manifest_sha256 {
-        bail!("runtime root manifest identity does not match rootfs.SHA256SUMS");
-    }
-    if !valid_sha256(&metadata.capture_rule_sha256) {
-        bail!("capture rule hash is malformed");
-    }
-    if sha256_file(&root.join("capture-rules.json"))? != metadata.capture_rule_sha256 {
-        bail!("capture rule identity does not match capture-rules.json");
-    }
-    if metadata.source_commit.len() != 40
-        || !metadata
-            .source_commit
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        || metadata.probe_version.is_empty()
-        || metadata.probe_version.len() > 32
-    {
-        bail!("artifact source identity is malformed");
-    }
-    if metadata.controlled_libc_version.is_empty() || metadata.controlled_libc_version.len() > 128 {
-        bail!("controlled glibc version is malformed");
-    }
-    let interpreter = Path::new(&metadata.child_interpreter);
-    let Some(interpreter_relative) = interpreter.strip_prefix("/").ok() else {
-        bail!("child interpreter is not an absolute path");
-    };
-    if !safe_relative_path(interpreter_relative)
-        || metadata.child_interpreter.len() > 1024
-        || !root.join("root").join(interpreter_relative).is_file()
-        || !paths.contains(&Path::new("root").join(interpreter_relative))
-    {
-        bail!("child interpreter is not present in the controlled root");
-    }
-    Ok(metadata)
-}
-
-fn safe_relative_path(path: &Path) -> bool {
-    let Some(text) = path.to_str() else {
-        return false;
-    };
-    !text.is_empty()
-        && text
-            .split('/')
-            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
-        && path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-}
-
-fn valid_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn sha256_file(path: &Path) -> Result<String> {
-    let metadata = fs::symlink_metadata(path)
-        .with_context(|| format!("missing payload file {}", path.display()))?;
-    if !metadata.file_type().is_file() {
-        bail!("payload member is not a regular file: {}", path.display());
-    }
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(hex::encode(hasher.finalize()))
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
@@ -1126,33 +950,6 @@ fn write_bootstrap_failure(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sha256_validation_is_strict() {
-        assert!(valid_sha256(&"a".repeat(64)));
-        assert!(!valid_sha256(&"A".repeat(64)));
-        assert!(!valid_sha256(&"a".repeat(63)));
-        assert!(!valid_sha256(&format!("{}g", "a".repeat(63))));
-    }
-
-    #[test]
-    fn manifest_paths_cannot_escape() {
-        assert!(safe_relative_path(Path::new("app/probe")));
-        assert!(!safe_relative_path(Path::new("../probe")));
-        assert!(!safe_relative_path(Path::new("/app/probe")));
-        assert!(!safe_relative_path(Path::new("app/./probe")));
-    }
-
-    #[test]
-    fn computes_known_hash() {
-        let directory = tempfile::tempdir().expect("tempdir");
-        let path = directory.path().join("value");
-        fs::write(&path, b"abc").expect("fixture");
-        assert_eq!(
-            sha256_file(&path).expect("hash"),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-    }
 
     #[test]
     fn bootstrap_failures_are_schema_valid_without_verified_metadata() {
@@ -1227,27 +1024,90 @@ mod tests {
     }
 
     #[test]
-    fn bundled_helper_resolution_rejects_host_libraries() {
-        let loader = Path::new("/artifact/libexec/ld-linux-x86-64.so.2");
-        let helper = Path::new("/artifact/libexec/bwrap");
-        let helper_lib = Path::new("/artifact/libexec/lib");
-        assert!(
-            validate_helper_list(
-                "libc.so.6 => /artifact/libexec/lib/libc.so.6 (0x1)",
-                loader,
-                helper,
-                helper_lib,
-            )
-            .is_ok()
+    fn containment_substage_is_derived_from_controlled_evidence() {
+        let result = ChildResult {
+            schema: "neuestar.child/v1".to_owned(),
+            contained: false,
+            launch_reached_main: true,
+            architecture: "x86_64".to_owned(),
+            user_namespace: "user:[2]".to_owned(),
+            mount_namespace: "mnt:[3]".to_owned(),
+            mapped_libc_paths: Vec::new(),
+            failure: None,
+        };
+        let failed = Command::new("sh")
+            .arg("-c")
+            .arg("exit 71")
+            .status()
+            .expect("spawn sh");
+        let succeeded = Command::new("sh")
+            .arg("-c")
+            .arg("exit 0")
+            .status()
+            .expect("spawn sh");
+        assert_eq!(
+            containment_substage(failed, None),
+            ContainmentSubstage::HelperExecution
         );
-        assert!(
-            validate_helper_list(
-                "libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x1)",
-                loader,
-                helper,
-                helper_lib,
-            )
-            .is_err()
+        assert_eq!(
+            containment_substage(succeeded, None),
+            ContainmentSubstage::ChildResultMissing
         );
+        assert_eq!(
+            containment_substage(failed, Some(&result)),
+            ContainmentSubstage::ChildLaunch
+        );
+    }
+
+    #[test]
+    fn stale_child_result_blocks_a_fresh_attempt() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("child-result.json");
+        fs::write(&path, "{\"schema\":\"neuestar.child/v1\"}").expect("stale fixture");
+        assert!(
+            ensure_fresh_evidence(&path).is_err(),
+            "a stale child result must refuse the attempt"
+        );
+        fs::remove_file(&path).expect("cleanup");
+        assert!(ensure_fresh_evidence(&path).is_ok());
+    }
+
+    #[test]
+    fn process_stderr_capture_is_bounded_and_preserves_exit_status() {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(
+                "i=0; while [ $i -lt 4000 ]; do \
+                 echo 0123456789abcdefghijklmnopqrstuvwxyz0123456789 >&2; \
+                 i=$((i+1)); done; exit 71",
+            )
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sh");
+        let stderr = child.stderr.take().expect("piped stderr");
+        let handle = thread::spawn(move || capture_process_stderr(stderr));
+        let status = child.wait().expect("wait sh");
+        let captured = handle.join().expect("stderr thread");
+        assert_eq!(status.code(), Some(71), "exit status must be preserved");
+        let text = captured.expect("captured stderr");
+        assert!(text.chars().count() <= PROCESS_STDERR_MAX_CHARS);
+        assert!(text.contains("0123456789abcdefghijklmnopqrstuvwxyz"));
+    }
+
+    #[test]
+    fn capture_plan_lists_only_user_and_mount_namespaces() {
+        let cli = Cli {
+            report: PathBuf::from("report.json"),
+            archive_sha256: Some("a".repeat(64)),
+            distro: CliDistro::Nixos,
+            gpu: CliGpu::Nvidia,
+            display: CliDisplay::Wayland,
+            dry_run: false,
+            artifact_root: None,
+        };
+        let plan = capture_plan(&cli, Path::new("/artifact"), Path::new("/evidence"));
+        assert_eq!(plan.namespaces, vec!["user", "mount"]);
+        assert_eq!(plan.application, "/artifact/app");
     }
 }

@@ -5,3 +5,8 @@
 report.json
 capture-plan.json
 
+
+# Full-VM lab evidence: the tiny run-log records are machine-readable evidence
+# and are deliberately committed inside docs/full-vm-lab-evidence/ only.
+!docs/full-vm-lab-evidence/**/*.log
+dist-a2/

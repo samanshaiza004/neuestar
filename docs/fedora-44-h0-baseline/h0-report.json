@@ -1,0 +1,139 @@
+{
+  "apparatus": {
+    "containment_argv": [
+      "--inhibit-cache",
+      "--library-path",
+      "/home/lab/h0p-artifact/libexec/lib",
+      "/home/lab/h0p-artifact/libexec/bwrap",
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-user",
+      "--ro-bind",
+      "/home/lab/h0p-artifact/root",
+      "/",
+      "--dev",
+      "/dev",
+      "--proc",
+      "/proc",
+      "--tmpfs",
+      "/tmp",
+      "--ro-bind",
+      "/home/lab/h0p-artifact/app",
+      "/app",
+      "--bind",
+      "/home/lab/h0p-report",
+      "/evidence",
+      "--clearenv",
+      "--setenv",
+      "PATH",
+      "/usr/bin:/bin",
+      "--setenv",
+      "HOME",
+      "/nonexistent",
+      "--setenv",
+      "LD_BIND_NOW",
+      "1",
+      "--setenv",
+      "NEUESTAR_CONTAINED",
+      "1",
+      "--setenv",
+      "NEUESTAR_REPORT_SCHEMA",
+      "neuestar.report/v2",
+      "--setenv",
+      "NEUESTAR_ARCHIVE_SHA256",
+      "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe",
+      "--setenv",
+      "NEUESTAR_PAYLOAD_MANIFEST_SHA256",
+      "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+      "--setenv",
+      "NEUESTAR_SOURCE_COMMIT",
+      "06adad5e83f1e31000bdbb44c693a3ece3dc5a6f",
+      "--setenv",
+      "NEUESTAR_PROBE_VERSION",
+      "0.2.0",
+      "--chdir",
+      "/app",
+      "/app/probe",
+      "--result",
+      "/evidence/child-result.json"
+    ],
+    "probe_sha256": "1e4773c66a09a2395556e7964da29e0d8825aa9d0fe5cb5c81a0004b6431d596"
+  },
+  "attempt": {
+    "integration_source_changed_since_previous": false,
+    "phase": "h0-preflight",
+    "session_id": "2026-08-17T21:14:25Z-1779",
+    "timestamp": "2026-08-17T21:14:25Z"
+  },
+  "burden": {
+    "additional_host_packages": [],
+    "carried_components": [],
+    "distro_branch_count": 0,
+    "helper_loc": 0,
+    "installed_byte_count": 0,
+    "installed_file_count": 0,
+    "installed_files": [],
+    "neuestar_maintained_dependencies": [],
+    "policy_loc": 0,
+    "services": []
+  },
+  "candidate": "none",
+  "classification": "pass",
+  "evidence": {
+    "post_host_state": "probe_parent_user_ns=user:[4026531837]\nprobe_parent_mount_ns=mnt:[4026531832]\nchild_user_ns=user:[4026532523]\nchild_mount_ns=mnt:[4026532522]\nchild_launch_reached_main=true\nchild_architecture=x86_64\nchild_mapped_libc=/lib/x86_64-linux-gnu/libc.so.6",
+    "pre_host_state": "os_release=fedora 44 (Fedora Linux 44 (Workstation Edition))\nkernel=6.19.10-300.fc44.x86_64 x86_64\nlsm_raw=lockdown,capability,yama,selinux,bpf,landlock,ipe,ima,evm\nartifact_outer_sha256=a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe\nreport_parent=/home/lab/h0p-report\n",
+    "stderr": ""
+  },
+  "execution": {
+    "child_mount_namespace_id": "mnt:[4026532522]",
+    "child_reached": true,
+    "child_user_namespace_id": "user:[4026532523]",
+    "helper_started": true
+  },
+  "forbidden_preparation": [],
+  "gates": {
+    "h0_0": "pass",
+    "h0_1": "not-run",
+    "h0_1s": "not-run",
+    "h0_2a": "not-run",
+    "h0_2b": "not-run",
+    "h0_3": "not-run",
+    "h0_4": "not-run",
+    "h0_4r": "not-run",
+    "h0_5": "not-run",
+    "h0_6": "not-run",
+    "h0_p": "not-run"
+  },
+  "host": {
+    "architecture": "x86_64",
+    "distro_id": "fedora",
+    "distro_version": "44",
+    "kernel_release": "6.19.10-300.fc44.x86_64",
+    "target_profile": {
+      "config_surface": "stock",
+      "iso_snapshot_date": "2026-08-01"
+    }
+  },
+  "integration": {
+    "integration_identity_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "integration_source_sha256": null,
+    "neuestar_integration_package_sha256": null,
+    "security_policy_sha256": null
+  },
+  "privileged_install_operations": [],
+  "runtime": {
+    "application_identity": "neuestar-probe-app",
+    "generation_identity": "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+    "runtime_artifact_sha256": "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe"
+  },
+  "schema": "neuestar.h0/v2",
+  "security_state": {
+    "lsm": "selinux",
+    "selinux": {
+      "enforcing": true,
+      "relevant_booleans": [],
+      "test_user_domain": "unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023\u0000"
+    }
+  },
+  "trusted_helper": null
+}

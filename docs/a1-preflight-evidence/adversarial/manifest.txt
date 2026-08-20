@@ -1,0 +1,9 @@
+52231e1caf55bcbc667b269f49c63599a6f7db4767ae6a039580d0ff853db712  /usr/libexec/neuestar/bwrap
+8d44b2208277fc0ba2241c910f997e1a31285c88be3dbc26ee82109866293230  /home/lab/hostile.so
+1d964a8e687a506de8ca849213d69dc8679cd4cc7d83f3ac622250289ba2b979  /home/lab/adv-child
+c307a639abcb6fbaefab1198d33737dd8ceb5d9cadec4408e178dc04a31e6183  /home/lab/h0-probe
+/usr/libexec/neuestar/bwrap uid=0 mode=755 size=72160
+/home/lab/hostile.so uid=1000 mode=755 size=9256
+/home/lab/adv-child uid=1000 mode=755 size=12248
+guest=ubuntu-2604-wayland-preflight
+2026-08-17T03:29:55Z

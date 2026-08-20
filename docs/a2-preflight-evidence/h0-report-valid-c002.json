@@ -1,0 +1,330 @@
+{
+  "apparatus": {
+    "constructed_bwrap_argv": [
+      "/usr/libexec/neuestar/bwrap-real",
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-user",
+      "--ro-bind",
+      "/home/lab/a2-artifact/root",
+      "/",
+      "--dev",
+      "/dev",
+      "--proc",
+      "/proc",
+      "--tmpfs",
+      "/tmp",
+      "--ro-bind",
+      "/home/lab/a2-artifact/app",
+      "/app",
+      "--bind",
+      "/home/lab/a2-report",
+      "/evidence",
+      "--clearenv",
+      "--setenv",
+      "PATH",
+      "/usr/bin:/bin",
+      "--setenv",
+      "HOME",
+      "/nonexistent",
+      "--setenv",
+      "LD_BIND_NOW",
+      "1",
+      "--setenv",
+      "NEUESTAR_CONTAINED",
+      "1",
+      "--setenv",
+      "NEUESTAR_REPORT_SCHEMA",
+      "neuestar.report/v2",
+      "--setenv",
+      "NEUESTAR_ARCHIVE_SHA256",
+      "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe",
+      "--setenv",
+      "NEUESTAR_PAYLOAD_MANIFEST_SHA256",
+      "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+      "--setenv",
+      "NEUESTAR_SOURCE_COMMIT",
+      "06adad5e83f1e31000bdbb44c693a3ece3dc5a6f",
+      "--setenv",
+      "NEUESTAR_PROBE_VERSION",
+      "0.2.0",
+      "--chdir",
+      "/app",
+      "/app/probe",
+      "--result",
+      "/evidence/child-result.json"
+    ],
+    "constructed_bwrap_argv_evidence": [
+      "/usr/libexec/neuestar/bwrap-real",
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-user",
+      "--ro-bind",
+      "/home/lab/a2-artifact/root",
+      "/",
+      "--dev",
+      "/dev",
+      "--proc",
+      "/proc",
+      "--tmpfs",
+      "/tmp",
+      "--ro-bind",
+      "/home/lab/a2-artifact/app",
+      "/app",
+      "--bind",
+      "/home/lab/a2-report",
+      "/evidence",
+      "--ro-bind",
+      "/home/lab/h0-probe",
+      "/tmp/h0-probe-evidence",
+      "--clearenv",
+      "--setenv",
+      "PATH",
+      "/usr/bin:/bin",
+      "--setenv",
+      "HOME",
+      "/nonexistent",
+      "--setenv",
+      "LD_BIND_NOW",
+      "1",
+      "--setenv",
+      "NEUESTAR_CONTAINED",
+      "1",
+      "--setenv",
+      "NEUESTAR_REPORT_SCHEMA",
+      "neuestar.report/v2",
+      "--setenv",
+      "NEUESTAR_ARCHIVE_SHA256",
+      "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe",
+      "--setenv",
+      "NEUESTAR_PAYLOAD_MANIFEST_SHA256",
+      "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+      "--setenv",
+      "NEUESTAR_SOURCE_COMMIT",
+      "06adad5e83f1e31000bdbb44c693a3ece3dc5a6f",
+      "--setenv",
+      "NEUESTAR_PROBE_VERSION",
+      "0.2.0",
+      "--chdir",
+      "/tmp",
+      "/tmp/h0-probe-evidence",
+      "--child-mode",
+      "--child-result",
+      "/evidence/h0-child-evidence.json"
+    ],
+    "containment_argv": [
+      "--artifact-root",
+      "/home/lab/a2-artifact",
+      "--evidence-dir",
+      "/home/lab/a2-report",
+      "--mode",
+      "outcome",
+      "--archive-sha256",
+      "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe",
+      "--payload-manifest-sha256",
+      "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+      "--source-commit",
+      "06adad5e83f1e31000bdbb44c693a3ece3dc5a6f",
+      "--probe-version",
+      "0.2.0"
+    ],
+    "probe_sha256": "1e4773c66a09a2395556e7964da29e0d8825aa9d0fe5cb5c81a0004b6431d596",
+    "security_evidence_argv": [
+      "--artifact-root",
+      "/home/lab/a2-artifact",
+      "--evidence-dir",
+      "/home/lab/a2-report",
+      "--mode",
+      "security-evidence",
+      "--archive-sha256",
+      "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe",
+      "--payload-manifest-sha256",
+      "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+      "--source-commit",
+      "06adad5e83f1e31000bdbb44c693a3ece3dc5a6f",
+      "--probe-version",
+      "0.2.0",
+      "--evidence-probe",
+      "/home/lab/h0-probe"
+    ]
+  },
+  "attempt": {
+    "integration_source_changed_since_previous": false,
+    "phase": "h0-preflight",
+    "session_id": "2026-08-17T05:43:08Z-3486",
+    "timestamp": "2026-08-17T05:43:08Z"
+  },
+  "burden": {
+    "additional_host_packages": [],
+    "carried_components": [
+      {
+        "binary_sha256": "52231e1caf55bcbc667b269f49c63599a6f7db4767ae6a039580d0ff853db712",
+        "neuestar_specific_patches": 0,
+        "patch_count": 0,
+        "security_update_responsibility": "track upstream bubblewrap releases",
+        "source_provenance": "exact pinned upstream bwrap bytes installed as /usr/libexec/neuestar/bwrap-real; reachable only through the static entry secure-exec transition",
+        "upstream_project": "bubblewrap",
+        "upstream_version_commit": "0.9.0"
+      }
+    ],
+    "distro_branch_count": 1,
+    "helper_loc": 296,
+    "installed_byte_count": 505586,
+    "installed_file_count": 6,
+    "installed_files": [
+      {
+        "gid": 0,
+        "kind": "first-party-helper",
+        "mode": 33261,
+        "path": "/usr/libexec/neuestar/entry",
+        "sha256": "685e6f45b01f953c1078ad5b9f621c3d7ee6cb609fb69265feaa84da0d1d987a",
+        "size_bytes": 431096,
+        "uid": 0
+      },
+      {
+        "gid": 0,
+        "kind": "carried-component",
+        "mode": 33261,
+        "path": "/usr/libexec/neuestar/bwrap-real",
+        "sha256": "52231e1caf55bcbc667b269f49c63599a6f7db4767ae6a039580d0ff853db712",
+        "size_bytes": 72160,
+        "uid": 0
+      },
+      {
+        "gid": 0,
+        "kind": "security-policy",
+        "mode": 420,
+        "path": "/etc/apparmor.d/neuestar-entry",
+        "sha256": "365e0dec7d9e39a6d1e471124f05de96641645154b448d07dcb5d7782a738e77",
+        "size_bytes": 555,
+        "uid": 0
+      },
+      {
+        "gid": 0,
+        "kind": "security-policy",
+        "mode": 420,
+        "path": "/etc/apparmor.d/neuestar-bwrap-real",
+        "sha256": "6f35e944c6acc5f384731df627662482f6ea5c074928b4cbc39e4c29049d65b5",
+        "size_bytes": 839,
+        "uid": 0
+      },
+      {
+        "gid": 0,
+        "kind": "security-policy",
+        "mode": 420,
+        "path": "/etc/apparmor.d/neuestar-unpriv",
+        "sha256": "bdd2465636aad7f3de7743143102e5c7ee232330e01e64676c2812ad32ef3c20",
+        "size_bytes": 649,
+        "uid": 0
+      },
+      {
+        "gid": 0,
+        "kind": "config",
+        "mode": 420,
+        "path": "/var/lib/neuestar/apparmor-state.json",
+        "sha256": "2c10b7e151724dc43e7bdfa59fdb76f40e86e7990c90d3c9517aedbf57eb76f6",
+        "size_bytes": 287,
+        "uid": 0
+      }
+    ],
+    "neuestar_maintained_dependencies": [],
+    "policy_loc": 42,
+    "services": []
+  },
+  "candidate": "A2",
+  "classification": "pass",
+  "evidence": {
+    "post_host_state": "probe_parent_user_ns=user:[4026531837]\nprobe_parent_mount_ns=mnt:[4026531832]\nchild_user_ns=user:[4026532640]\nchild_mount_ns=mnt:[4026532639]\nchild_launch_reached_main=true\nchild_architecture=x86_64\nchild_mapped_libc=/lib/x86_64-linux-gnu/libc.so.6",
+    "pre_host_state": "os_release=ubuntu 26.04 (Ubuntu 26.04 LTS)\nkernel=7.0.0-29-generic x86_64\nlsm_raw=lockdown,capability,landlock,yama,apparmor,ima,evm\nartifact_outer_sha256=a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe\nreport_parent=/home/lab/a2-report\n",
+    "stderr": ""
+  },
+  "execution": {
+    "child_cap_eff_hex": "0000000000000000",
+    "child_effective_capabilities": [],
+    "child_mount_namespace_id": "mnt:[4026532641]",
+    "child_profile_label": "neuestar-bwrap-real//&neuestar-unpriv (enforce)",
+    "child_reached": true,
+    "child_user_namespace_id": "user:[4026532642]",
+    "helper_profile_label": "neuestar-entry",
+    "helper_started": true
+  },
+  "forbidden_preparation": [],
+  "gates": {
+    "h0_0": "not-run",
+    "h0_1": "pass",
+    "h0_1s": "pass",
+    "h0_2a": "not-run",
+    "h0_2b": "not-run",
+    "h0_3": "not-run",
+    "h0_4": "not-run",
+    "h0_4r": "not-run",
+    "h0_5": "not-run",
+    "h0_6": "not-run",
+    "h0_p": "not-run"
+  },
+  "host": {
+    "architecture": "x86_64",
+    "distro_id": "ubuntu",
+    "distro_version": "26.04",
+    "kernel_release": "7.0.0-29-generic",
+    "target_profile": {
+      "config_surface": "stock",
+      "iso_snapshot_date": "2026-08-01"
+    }
+  },
+  "integration": {
+    "integration_identity_sha256": "91f098b69c528965cc607c663faf160e136434b0abc9277312ae05ecd049e35d",
+    "integration_source_sha256": "4ee0e12991b6e6c03cd3c3124ea1ebb979aeb8da",
+    "neuestar_integration_package_sha256": "91f098b69c528965cc607c663faf160e136434b0abc9277312ae05ecd049e35d",
+    "security_policy_sha256": "e13052f852ce4c43679e848e9a33054986858eef09cd39b62609231657325086"
+  },
+  "privileged_install_operations": [
+    {
+      "description": "installed neuestar-h0-a2 deb (static entry + private bwrap-real + three AppArmor policies)",
+      "kind": "package-install"
+    },
+    {
+      "description": "apparmor_parser -r /etc/apparmor.d/neuestar-entry /etc/apparmor.d/neuestar-bwrap-real /etc/apparmor.d/neuestar-unpriv; state recorded at /var/lib/neuestar/apparmor-state.json",
+      "kind": "apparmor-policy-load"
+    }
+  ],
+  "runtime": {
+    "application_identity": "neuestar-probe-app",
+    "generation_identity": "b6f127341d019da391e6cc60cc1d432fde12f8e27602a61ff5e288aafedd0f8e",
+    "runtime_artifact_sha256": "a5773bc2b1cec810a6767aa2eb561791f3ab6c312b90afa4dac11e103c9c10fe"
+  },
+  "schema": "neuestar.h0/v2",
+  "security_state": {
+    "apparmor": {
+      "loaded_profile_state_sha256": "2c10b7e151724dc43e7bdfa59fdb76f40e86e7990c90d3c9517aedbf57eb76f6",
+      "loaded_profiles": [
+        {
+          "mode": "enforce",
+          "name": "neuestar-entry",
+          "path": "/usr/libexec/neuestar/entry"
+        },
+        {
+          "mode": "enforce",
+          "name": "neuestar-bwrap-real"
+        },
+        {
+          "mode": "enforce",
+          "name": "neuestar-unpriv"
+        }
+      ],
+      "parser_version": "AppArmor parser version 5.0.0~beta1",
+      "restriction_sysctl": 1
+    },
+    "lsm": "apparmor"
+  },
+  "trusted_helper": {
+    "canonical_path": "/usr/libexec/neuestar/entry",
+    "elf_interpreter": null,
+    "gid": 0,
+    "mode": 33261,
+    "parent_mount_writable_by_test_user": false,
+    "regular_file": true,
+    "sha256": "685e6f45b01f953c1078ad5b9f621c3d7ee6cb609fb69265feaa84da0d1d987a",
+    "uid": 0
+  }
+}
