@@ -1,6 +1,7 @@
 # Architecture
 
-Status: Gate L0 experiment; no stable application or scene ABI exists.
+Status: historical Gate L0 experiment, frozen 2026-08-20; no stable
+application or scene ABI exists and none is planned.
 
 ## Thesis under test
 

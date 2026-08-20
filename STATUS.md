@@ -1,7 +1,20 @@
 # Status
 
-Updated 2026-08-15. This file distinguishes implementation checks from physical
-Gate L0 evidence.
+Updated 2026-08-20. Neuestar/Instar research is frozen. This file distinguishes
+the implementation that exists from physical Gate L0 evidence that was never
+completed, and from the product conclusions drawn after the premise changed.
+
+For the full rationale, see [docs/RESEARCH-CLOSURE.md](docs/RESEARCH-CLOSURE.md).
+
+## Current disposition
+
+- **Research phase:** closed.
+- **Repository:** preserved as an archival experiment.
+- **Product/framework status:** no Neuestar platform is being built.
+- **Physical matrix:** intentionally not completed; no additional Fedora,
+  Arch, Ubuntu, NixOS, GPU, or churn work is on the product-critical path.
+- **Evidence claim:** no overall Gate L0 pass is claimed. Local checks validate
+  the apparatus, not the cross-distribution hypothesis.
 
 ## Implemented
 
@@ -35,7 +48,7 @@ These are implementation checks only. They are not evidence that Linux user
 namespaces, bundled bubblewrap, controlled glibc, Vulkan, or presentation work
 on any physical matrix cell.
 
-## Unresolved risks
+## Unresolved research questions (not active commitments)
 
 - This development host is macOS arm64, so no canonical Linux x86_64 artifact
   has yet been built or executed here.
@@ -46,7 +59,9 @@ on any physical matrix cell.
   bubblewrap input remains unresolved; exact captured bytes are nevertheless
   part of the immutable payload identity.
 - No physical matrix or driver churn evidence exists.
-- Host-driver versus controlled-glibc compatibility remains the central risk.
+- Host-driver versus controlled-glibc compatibility remains the central
+  unresolved technical question, but answering it is optional future research,
+  not a reason to keep the platform effort alive.
 
 ## Gate status
 
@@ -57,9 +72,11 @@ on any physical matrix cell.
 - L0.4: not run
 - L0.5: not run
 
-## Next falsifier
+## What happens next
 
-Run the canonical build on Linux x86_64, publish exactly one archive/hash pair,
-then attempt ordinary-user L0.0/L0.1 on stock NixOS NVIDIA and Ubuntu NVIDIA
-Wayland/X11 hosts without preparation. Namespace denial is a valid failed
-result and must not be repaired.
+Nothing in this repository is on the critical path for the next serious
+engineering work. Punks and Scratchpad should be built as ordinary native
+applications with direct toolkit and OS composition. Record friction literally,
+solve it locally first, and only extract a small primitive after a second real
+application hits the same problem. Outside users and multiple consumers must
+justify any later compatibility surface.

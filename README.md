@@ -1,17 +1,23 @@
 # Neuestar
 
-Neuestar is a clean-slate experiment in whether one immutable Linux x86_64
-native application artifact can run across incompatible distributions while
-using each host's real accelerated graphics stack.
+Neuestar is a concluded, frozen experiment in whether one immutable Linux
+x86_64 native application artifact could run across incompatible distributions
+while using each host's real accelerated graphics stack.
 
-The repository currently implements only Gate L0 scientific infrastructure.
-It is not a desktop framework, UI toolkit, package manager, or stable SDK.
+The research phase ended on 2026-08-20. This repository is now an archive of
+the hypothesis, implementation, evidence discipline, and negative results. It
+is not an active desktop framework, UI toolkit, package manager, or stable SDK.
+
+Read [docs/RESEARCH-CLOSURE.md](docs/RESEARCH-CLOSURE.md) for the current
+verdict and [STATUS.md](STATUS.md) for the exact implementation/evidence
+boundary. The detailed Gate L0 documents remain historical experiment records;
+they are not a roadmap or an obligation to complete the physical matrix.
 
 The immediate artifact is `neuestar-probe`: a static musl launcher, a small
 glibc-linked child, a deliberately controlled root filesystem, provenance, and
 machine-readable reports. Physical GPU results are evidence; hosted CI is not.
 
-Start with [docs/GATE-L0.md](docs/GATE-L0.md), then read
+For the historical experiment, start with [docs/GATE-L0.md](docs/GATE-L0.md), then read
 [docs/KILL-CONDITIONS.md](docs/KILL-CONDITIONS.md) before changing capture or
 containment behavior.
 

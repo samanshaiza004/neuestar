@@ -1,5 +1,9 @@
 # Predeclared Kill Conditions
 
+**Historical record — research frozen 2026-08-20.** These conditions remain
+unchanged as part of the experiment's audit trail; they do not create a new
+obligation to run the physical campaign.
+
 These rules were committed before physical Gate L0 execution. They must not be
 relaxed after observing failures.
 
@@ -25,4 +29,3 @@ plus reusable Neuestar native libraries and an optional Wasm sandbox for future
 untrusted plugins.
 
 Ambiguity is interpreted against the Linux Substrate hypothesis.
-

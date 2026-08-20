@@ -1,5 +1,8 @@
 # CI and Physical Lab
 
+**Historical record — research frozen 2026-08-20.** The workflows and matrix
+described here are preserved for reproducibility, not scheduled completion.
+
 ## Hosted CI
 
 Hosted runners format, lint, test, validate schemas, inspect ELF metadata,

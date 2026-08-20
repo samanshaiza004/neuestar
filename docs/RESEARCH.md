@@ -1,5 +1,8 @@
 # Upstream Research
 
+**Historical record — research frozen 2026-08-20.** These facts supported the
+experiment; they are not an active implementation roadmap.
+
 Accessed 2026-08-15. Links are upstream specifications, project source/docs, or
 vendor documentation; downstream blogs are not used as implementation truth.
 

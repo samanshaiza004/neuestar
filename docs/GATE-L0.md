@@ -1,5 +1,8 @@
 # Gate L0
 
+**Historical record — research frozen 2026-08-20.** The campaign rules below
+describe the experiment as designed; they are not an active execution plan.
+
 Gate L0 asks whether Neuestar can maintain a small controlled Linux userspace
 that consumes host GPU userspace drivers without inheriting a Flatpak- or
 Steam-Runtime-sized maintenance obligation.
